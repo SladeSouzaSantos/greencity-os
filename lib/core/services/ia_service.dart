@@ -1,11 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../../data/models/ai_extraction_result_model.dart';
 
 class IAService {
-  final _apiKey = "AIzaSyBPZMmL7YW1TJDrc8sFXZbT1wjGIOjs0cE"; 
+  String get _apiKey {
+    final key = dotenv.env['GEMINI_API_KEY']?.trim();
+    if (key == null || key.isEmpty) {
+      throw StateError(
+        'GEMINI_API_KEY não configurada. Crie um arquivo .env na raiz do projeto.',
+      );
+    }
+    return key;
+  } 
 
   Future<AiExtractionResultModel> extractEquipmentData(String filePath) async {
     final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: _apiKey);

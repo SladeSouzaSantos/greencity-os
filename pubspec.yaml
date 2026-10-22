@@ -19,6 +19,7 @@ dependencies:
   fl_chart: ^0.70.0
   open_filex: ^4.7.0
   google_generative_ai: ^0.4.7
+  flutter_dotenv: ^6.0.1
   file_picker: ^10.3.10
 
 dev_dependencies:
@@ -34,3 +35,4 @@ flutter:
 
   assets:
     - assets/localidades.json
+    - .env

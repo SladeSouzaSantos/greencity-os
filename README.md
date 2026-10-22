@@ -19,3 +19,13 @@ lib/
 │   └── widgets/       # Componentes reutilizáveis
 └── main.dart          # Ponto de entrada e Injeção de Dependência
 ```
+
+## Configuração local da IA (Gemini)
+
+1. Copie `.env.example` para `.env` na raiz do projeto.
+2. Configure `GEMINI_API_KEY` no arquivo `.env` local, sem aspas.
+3. Execute `flutter pub get` e `flutter run`.
+
+O arquivo `.env` está no `.gitignore`, e `lib/main.dart` o carrega antes de iniciar o app. A chave previamente publicada no repositório deve ser **revogada e substituída**: removê-la de commits novos não a elimina do histórico.
+
+**Segurança:** `flutter_dotenv` inclui o `.env` nos assets do build. Portanto, essa configuração serve para desenvolvimento, não protege uma chave em APK/IPA/web distribuído. Para produção, mova o consumo do Gemini para um backend com autenticação e limitação de uso.

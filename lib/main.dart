@@ -1,5 +1,6 @@
 import 'package:isar/isar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'data/datasources/solar_seed_data.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:greencity_os/core/injection/injection.dart';
@@ -10,6 +11,7 @@ import 'presentation/pages/home/home_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: '.env');
   await configureDependencies();
   
   final isar = getIt<Isar>();

@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Arquivos de ambiente locais (não versionar credenciais)
+.env
+.env.*
+!.env.example
