@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import '../../data/models/ai_datasheet_semantic_auditor.dart';
 import '../../data/models/ai_equipment_refinement.dart';
 import '../../data/models/ai_extraction_result_model.dart';
 import '../../data/models/ai_inverter_refinement.dart';
@@ -127,6 +128,13 @@ módulos em Wp, de inversores em kW; dimensões de módulos em mm, peso
 em kg, temperatura em °C, tensão em V, corrente em A.
 Eficiência de módulo em porcentagem (ex: 22.8) e eficiência de
 inversor em porcentagem (ex: 98.2). Coeficientes térmicos em %/°C.
+GARANTIAS: "30 years performance warranty" indica SOMENTE garantia
+linear de desempenho (efficiencyWarranty), NUNCA garantia física.
+physicalWarranty requer menção EXPLÍCITA a product/material warranty.
+"less than 10%" ou "<10%" NÃO significa perda exata de 10%:
+efficiencyLoss=null se não houver degradação final exata declarada.
+Consulte "Maximum Series Fuse", "Operating Temperature" e
+"Corrente Máx. de Saída" mesmo quando as outras propriedades existem.
 Use parâmetros de STC, não NMOT. Preserve o fabricante e o código
 integral do modelo (incluindo sufixos); repita dados compartilhados
 da família para cada variante SOMENTE se estiverem no documento.
@@ -194,13 +202,17 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
     );
     try {
       final initial = parseCompletion(response);
-      if (!AiEquipmentRefinement.needsRefinement(initial)) return initial;
+      final extractedText = AiInverterRefinement.parsedPdfText(response);
+      if (!AiEquipmentRefinement.needsRefinement(initial)) {
+        return AiDatasheetSemanticAuditor.audit(initial, extractedText);
+      }
 
       // O CloudflareAI pode devolver markdown em file.annotations;
       // uma única segunda chamada SÓ DE TEXTO evita retransmitir o PDF
       // em Base64 (particularmente importante em arquivos grandes).
-      final extractedText = AiInverterRefinement.parsedPdfText(response);
-      if (extractedText == null) return initial;
+      if (extractedText == null) {
+        return AiDatasheetSemanticAuditor.audit(initial, null);
+      }
 
       try {
         final refined = await _request(
@@ -218,11 +230,14 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
           },
         );
         final additional = parseCompletion(refined);
-        return AiEquipmentRefinement.mergeMissing(initial, additional);
+        return AiDatasheetSemanticAuditor.audit(
+          AiEquipmentRefinement.mergeMissing(initial, additional),
+          extractedText,
+        );
       } on Exception {
         // A segunda chamada é opcional. Se falhar (por exemplo, quota
         // do :free), não descarte o que foi extraído na primeira.
-        return initial;
+        return AiDatasheetSemanticAuditor.audit(initial, extractedText);
       }
     } on FormatException {
       // Uma resposta cortada pode conservar o texto OCR nas annotations.
@@ -244,7 +259,8 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
               ],
             },
           );
-          return parseCompletion(recovered);
+          return AiDatasheetSemanticAuditor.audit(
+              parseCompletion(recovered), extractedText);
         } on Exception {
           // Usar modelo alternativo apenas para arquivos pequenos.
         }
@@ -263,7 +279,8 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
         key: key,
         message: message,
       );
-      return parseCompletion(retry);
+      return AiDatasheetSemanticAuditor.audit(
+        parseCompletion(retry), AiInverterRefinement.parsedPdfText(retry));
     }
   }
 

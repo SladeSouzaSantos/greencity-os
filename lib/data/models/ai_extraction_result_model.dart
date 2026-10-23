@@ -5,10 +5,13 @@ import 'ai_numeric_value_parser.dart';
 class AiExtractionResultModel {
   final List<AiExtractedModule> modules;
   final List<AiExtractedInverter> inverters;
+  /// Mensagens da conferência com o texto original do datasheet.
+  final Map<String, List<String>> auditWarnings;
 
   const AiExtractionResultModel({
     required this.modules,
     required this.inverters,
+    this.auditWarnings = const {},
   });
 
   factory AiExtractionResultModel.fromJson(Map<String, dynamic> json) {

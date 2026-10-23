@@ -120,6 +120,78 @@ void main() {
     expect(result.modules.single.length, 2382);
   });
 
+  test('audita garantias Jetion e recupera parâmetros mecânicos', () async {
+    final dio = Dio();
+    var calls = 0;
+    final responseData = {'modules': [{
+      'manufacturer': 'Jetion Solar', 'modelName': 'JT690SLk(B)',
+      'powerWp': 690, 'physicalWarranty': 30,
+      'efficiencyWarranty': 30, 'efficiencyLoss': 10,
+    }], 'inverters': []};
+    const text = '''
+Jetion Solar JT690SLk(B) 690 Wp
+30 years linear performance warranty<10%
+Maximum System Voltage 1500V/DC(IEC)
+Operating Temperature -40°C-+85°C
+Maximum Series Fuse 35A
+''';
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      calls++;
+      handler.resolve(Response(requestOptions: options, statusCode: 200,
+        data: completion(responseData, annotations: calls == 1 ? [{
+          'type': 'file',
+          'file': {'content': [{'type': 'text', 'text': text}]},
+        }] : null),
+      ));
+    }));
+    final result = await service(dio).extractEquipmentData(pdf.path);
+    expect(calls, 2);
+    final m = result.modules.single;
+    expect(m.physicalWarranty, isNull);
+    expect(m.efficiencyWarranty, 30);
+    expect(m.efficiencyLoss, isNull);
+    expect(m.fuseCurrent, 35);
+    expect(m.minOperatingTemp, -40);
+    expect(m.maxOperatingTemp, 85);
+    expect(result.auditWarnings, isNotEmpty);
+  });
+
+  test('audita modelo AUXSOL por coluna com 3 entradas e 2 MPPTs', () async {
+    final dio = Dio();
+    var calls = 0;
+    final inverters = [
+      {'manufacturer': 'AUXSOL', 'modelName': 'ASN-9SL',
+       'nominalPowerKw': 9, 'mpptCount': 2, 'totalDcInputs': 2},
+      {'manufacturer': 'AUXSOL', 'modelName': 'ASN-10SL',
+       'nominalPowerKw': 10, 'mpptCount': 2, 'totalDcInputs': 2},
+      {'manufacturer': 'AUXSOL', 'modelName': 'ASN-10.5SL',
+       'nominalPowerKw': 10.5, 'mpptCount': 2, 'totalDcInputs': 2},
+    ];
+    const text = '''
+Modelo ASN-9SL ASN-10SL ASN-10.5SL
+Corrente Máx. (Impp) 32A/16A 32A/16A 32A/16A
+Quantidade MPPT 2 2 2
+Número de Entradas do Inversor 3 3 3
+Corrente Máx. de Saída 40.9A 45.5A 47.7A
+''';
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      calls++;
+      handler.resolve(Response(requestOptions: options, statusCode: 200,
+        data: completion({'modules': [], 'inverters': inverters},
+          annotations: calls == 1 ? [{
+            'type': 'file',
+            'file': {'content': [{'type': 'text', 'text': text}]},
+          }] : null),
+      ));
+    }));
+    final result = await service(dio).extractEquipmentData(pdf.path);
+    expect(calls, 2);
+    expect(result.inverters[1].mpptCount, 2);
+    expect(result.inverters[1].totalDcInputs, 3);
+    expect(result.inverters[1].maxOutputCurrent, 45.5);
+    expect(result.auditWarnings, isNotEmpty);
+  });
+
   test('sem annotations retorna extração inicial sem novo envio', () async {
     final dio = Dio();
     var count = 0;

@@ -8,6 +8,7 @@ import '../../../data/repositories/equipment_catalog.dart';
 import '../../../domain/services/equipment_input_validator.dart';
 import '../../../data/models/ai_extraction_result_model.dart';
 import '../../../data/models/ai_equipment_refinement.dart';
+import '../../../data/models/ai_datasheet_semantic_auditor.dart';
 import '../../../data/models/ai_equipment_mapper.dart';
 import '../../../domain/entities/inverter.dart';
 import '../../../domain/entities/inverter_mppt_configuration.dart';
@@ -51,6 +52,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   final List<Object> _pendingAiModels = [];
   final Set<String> _registeredModuleKeys = {};
   final Set<String> _registeredInverterKeys = {};
+  Map<String, List<String>> _aiAuditWarnings = {};
+  final Set<String> _manualEditedFields = {};
   bool _isLoadingAi = false;
   bool _isSaving = false;
   int _totalAiModels = 0;
@@ -343,6 +346,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   }
 
   void _clearManualForm() {
+    _manualEditedFields.clear();
+    _aiAuditWarnings = {};
     for (final controller in _ctrl.values) {
       controller.clear();
     }
@@ -414,11 +419,34 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
             child: Text(
               'Atenção: correntes diferentes por MPPT: '
               '${(_pendingAiModels.first as AiExtractedInverter).mpptInputCurrentsA!.join(' / ')} A. '
-              'O catálogo guarda só uma corrente, usando o MENOR limite '
-              'por segurança. Revise antes de salvar.',
+              'O catálogo preserva os limites individuais; os campos '
+              'escalares usam o MENOR limite somente para cálculos legados.',
               style: const TextStyle(color: Colors.deepOrange),
             ),
           ),
+        if (_aiAuditWarnings.containsKey(
+            AiDatasheetSemanticAuditor.key(_pendingAiModels.first)))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Auditoria do datasheet:',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                for (final warning in _aiAuditWarnings[
+                    AiDatasheetSemanticAuditor.key(_pendingAiModels.first)]!)
+                  Text('• ' + warning,
+                      style: const TextStyle(color: Colors.deepOrange)),
+              ],
+            ),
+          ),
+        if (_manualEditedFields.isNotEmpty)
+          Text('REVISADO MANUALMENTE: ' + _manualEditedFields.join(', '),
+              style: const TextStyle(color: Colors.green)),
+        const Text('Estados: EXTRAÍDO DA FONTE = valor conferido; '
+            'NÃO CONFIRMADO = revisar no PDF; INCONSISTENTE = divergência; '
+            'REVISADO MANUALMENTE = campo alterado no formulário.',
+            style: TextStyle(fontSize: 11)),
         if (_isRegistered(_pendingAiModels.first))
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 6),
@@ -495,6 +523,16 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       if (_isRegistered(item) ||
           !seenInPdf.add(_typedQueueKey(item))) {
         duplicates++;
+        continue;
+      }
+      final auditIssues = _aiAuditWarnings[
+          AiDatasheetSemanticAuditor.key(item)] ?? const <String>[];
+      if (auditIssues.isNotEmpty) {
+        final label = item is AiExtractedModule
+            ? item.modelName : (item as AiExtractedInverter).modelName;
+        incomplete.add(label +
+            ': revisão documental obrigatória (' +
+            auditIssues.length.toString() + ' aviso(s))');
         continue;
       }
       if (item is AiExtractedModule) {
@@ -802,6 +840,11 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         keyboardType: EquipmentInputValidator.isTextField(ctrlKey)
             ? TextInputType.text
             : const TextInputType.numberWithOptions(decimal: true, signed: true),
+        onChanged: (_) {
+          if (_pendingAiModels.isNotEmpty) {
+            setState(() => _manualEditedFields.add(ctrlKey));
+          }
+        },
         validator: (value) => EquipmentInputValidator.validate(
           key: ctrlKey,
           value: value,
@@ -874,6 +917,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       final invertersAlready = await isar.inverters.where().findAll();
       if (!mounted) return;
       setState(() {
+        _aiAuditWarnings = result.auditWarnings;
+        _manualEditedFields.clear();
         _registeredModuleKeys
           ..clear()
           ..addAll(modulesAlready.map((m) =>
@@ -914,6 +959,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
 
   void _loadCurrentAiModel() {
     if (_pendingAiModels.isEmpty) return;
+    _manualEditedFields.clear();
     final data = _pendingAiModels.first;
 
     for (final controller in _ctrl.values) {
@@ -1052,6 +1098,36 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         return;
       }
       if (candidate.hasDetails) mpptConfig = candidate;
+    }
+    if (_pendingAiModels.isNotEmpty) {
+      final warnings = _aiAuditWarnings[
+          AiDatasheetSemanticAuditor.key(_pendingAiModels.first)] ??
+          const <String>[];
+      if (warnings.isNotEmpty) {
+        final approved = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Confirmar revisão técnica'),
+            content: SingleChildScrollView(
+              child: Text('Existem propriedades não confirmadas ou '
+                  'corrigidas durante a auditoria. Confira com o PDF '
+                  'antes de salvar:\n\n' + warnings.join('\n') + '\n\n'
+                  'Deseja confirmar manualmente este cadastro?'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Continuar revisando'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Revisei e confirmo'),
+              ),
+            ],
+          ),
+        );
+        if (approved != true || !mounted) return;
+      }
     }
     setState(() => _isSaving = true);
     try {
