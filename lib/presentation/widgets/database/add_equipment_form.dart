@@ -16,8 +16,15 @@ import '../../../domain/enums/inverter_type.dart';
 
 class AddEquipmentForm extends StatefulWidget {
   final String initialType;
+  final PvModule? moduleToEdit;
+  final Inverter? inverterToEdit;
 
-  const AddEquipmentForm({super.key, this.initialType = 'modulo'});
+  const AddEquipmentForm({
+    super.key,
+    this.initialType = 'modulo',
+    this.moduleToEdit,
+    this.inverterToEdit,
+  }) : assert(moduleToEdit == null || inverterToEdit == null);
 
   @override
   State<AddEquipmentForm> createState() => _AddEquipmentFormState();
@@ -25,6 +32,8 @@ class AddEquipmentForm extends StatefulWidget {
 
 class _AddEquipmentFormState extends State<AddEquipmentForm> {
   String type = 'modulo';
+  bool get _editing => widget.moduleToEdit != null ||
+      widget.inverterToEdit != null;
   final _formKey = GlobalKey<FormState>();
 
   final Map<String, TextEditingController> _ctrl = {};
@@ -50,8 +59,10 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   @override
   void initState() {
     super.initState();
-    type = widget.initialType;
+    type = widget.moduleToEdit != null ? 'modulo' :
+        widget.inverterToEdit != null ? 'inversor' : widget.initialType;
     _initControllers();
+    _fillExistingEquipment();
     _loadManufacturers();
   }
 
@@ -107,6 +118,67 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     _ctrl['warrantyYrs']?.text = '10';
   }
 
+  void _fillExistingEquipment() {
+    void put(String field, Object? value) {
+      if (value != null) _ctrl[field]!.text = value.toString();
+    }
+    final module = widget.moduleToEdit;
+    if (module != null) {
+      put('brand', module.manufacturer);
+      put('model', module.modelName);
+      put('powerWp', module.powerWp);
+      put('efficiency', module.efficiency);
+      put('length', module.length);
+      put('width', module.width);
+      put('weight', module.weight);
+      put('vOc', module.vOc);
+      put('iSc', module.iSc);
+      put('vMp', module.vMp);
+      put('iMp', module.iMp);
+      put('maxSystemVoltage', module.maxSystemVoltage);
+      put('tempCoefVoc', module.tempCoefVoc);
+      put('tempCoefIsc', module.tempCoefIsc);
+      put('tempCoefPmax', module.tempCoefPmax);
+      put('minOpTempMod', module.minOperatingTemp);
+      put('maxOpTempMod', module.maxOperatingTemp);
+      put('fuseCurrent', module.fuseCurrent);
+      put('physWarranty', module.physicalWarranty);
+      put('effWarranty', module.efficiencyWarranty);
+      put('effLoss', module.efficiencyLoss);
+      _modCellTech = module.cellTechnology;
+      _modBifacial = module.isBifacial;
+      _modTier1 = module.isTier1;
+    }
+    final inverter = widget.inverterToEdit;
+    if (inverter != null) {
+      put('brand', inverter.manufacturer);
+      put('model', inverter.modelName);
+      put('nomPowerKw', inverter.nominalPowerKw);
+      put('maxInPowerKw', inverter.maxInputPowerKw);
+      put('maxEff', inverter.maxEfficiency * 100);
+      put('euroEff', inverter.euroEfficiency * 100);
+      put('mpptCount', inverter.mpptCount);
+      put('maxInVolts', inverter.maxInputVoltage);
+      put('nomVoltsDc', inverter.nominalVoltageDc);
+      put('startVolts', inverter.startVoltage);
+      put('minMpptVolts', inverter.minMpptVoltage);
+      put('maxMpptVolts', inverter.maxMpptVoltage);
+      put('maxInCurrPerMppt', inverter.maxInputCurrentPerMppt);
+      put('maxIsc', inverter.maxShortCircuitCurrent);
+      put('maxOutCurr', inverter.maxOutputCurrent);
+      put('nomVoltsAc', inverter.nominalVoltageAc);
+      put('dimensions', inverter.dimensions);
+      put('weight', inverter.weight);
+      put('minOpTempInv', inverter.minOperatingTemp);
+      put('maxOpTempInv', inverter.maxOperatingTemp);
+      put('protDegree', inverter.protectionDegree);
+      put('warrantyYrs', inverter.warrantyYears);
+      _invType = inverter.inverterType;
+      _invGridConn = inverter.gridConnection;
+      _invHybrid = inverter.isHybrid;
+    }
+  }
+
   @override
   void dispose() {
     _brandFocusNode.dispose();
@@ -142,11 +214,12 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
                 ],
                 selected: {type},
                 // [MODIFICADO] Chama _onTypeChanged para atualizar a lista de fabricantes ao trocar de aba
-                onSelectionChanged: isProcessingQueue || _isSaving ? null : (val) => _onTypeChanged(val.first),
+                onSelectionChanged: isProcessingQueue || _isSaving || _editing ?
+                    null : (val) => _onTypeChanged(val.first),
               ),
               const SizedBox(height: 20),
 
-              if (!isProcessingQueue) _buildAIActions(),
+              if (!isProcessingQueue && !_editing) _buildAIActions(),
               if (isProcessingQueue) _buildImportQueue(),
               const Divider(height: 30),
 
@@ -166,6 +239,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
                 style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(55)),
                 child: Text(_isSaving
                     ? 'Salvando...'
+                    : _editing ? 'ATUALIZAR EQUIPAMENTO'
                     : isProcessingQueue
                         ? 'REVISAR E SALVAR (${_pendingAiModels.length} restante(s))'
                         : 'SALVAR NO BANCO'),
@@ -240,7 +314,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          isProcessingQueue ? "Revisando Fila da IA" : "Novo Equipamento",
+          isProcessingQueue ? 'Revisando Fila da IA' :
+              _editing ? 'Editar Equipamento' : 'Novo Equipamento',
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         if (isProcessingQueue)
@@ -893,7 +968,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     try {
       final catalog = EquipmentCatalog(getIt<Isar>());
       if (type == 'modulo') {
-        await catalog.addModule(PvModule(
+        final record = PvModule(
           manufacturer: brand,
           modelName: model,
           powerWp: integer('powerWp'),
@@ -918,9 +993,15 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
           physicalWarranty: integer('physWarranty'),
           efficiencyWarranty: integer('effWarranty'),
           efficiencyLoss: number('effLoss'),
-        ));
+        );
+        if (widget.moduleToEdit != null) {
+          record.id = widget.moduleToEdit!.id;
+          await catalog.updateModule(record);
+        } else {
+          await catalog.addModule(record);
+        }
       } else {
-        await catalog.addInverter(Inverter(
+        final record = Inverter(
           manufacturer: brand,
           modelName: model,
           inverterType: _invType,
@@ -946,7 +1027,13 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
           protectionDegree: _ctrl['protDegree']!.text.trim(),
           isHybrid: _invHybrid,
           warrantyYears: integer('warrantyYrs'),
-        ));
+        );
+        if (widget.inverterToEdit != null) {
+          record.id = widget.inverterToEdit!.id;
+          await catalog.updateInverter(record);
+        } else {
+          await catalog.addInverter(record);
+        }
       }
       if (!mounted) return;
       if (_pendingAiModels.isNotEmpty) {
@@ -971,6 +1058,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(saved > 0
             ? '$saved equipamento(s) importado(s) e salvo(s).'
+            : _editing ? 'Equipamento atualizado com sucesso.'
             : 'Equipamento salvo no banco local.')),
       );
     } catch (error) {
