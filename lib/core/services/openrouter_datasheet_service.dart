@@ -214,10 +214,38 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
         return initial;
       }
     } on FormatException {
-      // O fallback do OpenRouter só lida com falhas dos provedores.
-      // Um HTTP 200 com JSON inválido não ativa esse fallback.
-      // Repetimos UMA ÚNICA VEZ com o próximo modelo gratuito.
-      if (models.length < 2) rethrow;
+      // Uma resposta cortada pode conservar o texto OCR nas annotations.
+      // Antes de retransmitir PDF, realizar uma recuperação SÓ DE TEXTO.
+      final extractedText = AiInverterRefinement.parsedPdfText(response);
+      if (extractedText != null) {
+        try {
+          final recovered = await _request(
+            models: models,
+            engine: engine,
+            key: key,
+            message: {
+              'role': 'user',
+              'content': [
+                {
+                  'type': 'text',
+                  'text': AiInverterRefinement.recoveryPrompt(extractedText),
+                }
+              ],
+            },
+          );
+          return parseCompletion(recovered);
+        } on Exception {
+          // Usar modelo alternativo apenas para arquivos pequenos.
+        }
+      }
+      // Reenviar PDF grande repetidas vezes gera custo e erro 413/timeout.
+      if (models.length < 2 || size > 2 * 1024 * 1024) {
+        throw const FormatException(
+          'A resposta da IA foi interrompida ou não contém JSON completo. '
+          'Use outro modelo gratuito ou otimize o PDF. '
+          'O aplicativo evita reenviar automaticamente PDFs grandes.',
+        );
+      }
       final retry = await _request(
         models: models.skip(1).toList(),
         engine: engine,
@@ -314,12 +342,6 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
       throw const FormatException('OpenRouter não retornou uma resposta válida.');
     }
     final first = choices.first as Map;
-    if (first['finish_reason'] == 'length') {
-      throw const FormatException(
-        'O modelo interrompeu a extração. Selecione outro modelo '
-        'ou um datasheet menor.',
-      );
-    }
     final message = first['message'];
     if (message is! Map) {
       throw const FormatException('OpenRouter retornou uma mensagem inválida.');
@@ -345,7 +367,20 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
     if (responseText.isEmpty) {
       throw const FormatException('O modelo retornou uma resposta vazia.');
     }
-    final decoded = jsonDecode(responseText);
+    // finish_reason=length pode aparecer até quando o modelo encerrou
+    // APÓS devolver JSON sintaticamente completo: valide o conteúdo antes
+    // de descartar toda a extração por causa desse status.
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(responseText);
+    } on FormatException {
+      if (first['finish_reason'] == 'length') {
+        throw const FormatException(
+          'O modelo atingiu o limite de saída e cortou o JSON do PDF.',
+        );
+      }
+      rethrow;
+    }
     if (decoded is! Map) {
       throw const FormatException(
         'A resposta precisa ser um objeto JSON com modules e inverters.',

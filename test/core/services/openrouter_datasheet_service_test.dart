@@ -287,6 +287,33 @@ void main() {
     );
   });
 
+  test('preserva JSON válido mesmo se o modelo disser finish_reason length', () {
+    final result = OpenRouterDatasheetService.parseCompletion({
+      'choices': [{
+        'finish_reason': 'length',
+        'message': {
+          'content': jsonEncode({
+            'modules': [
+              {'manufacturer': 'Jetion', 'modelName': 'JT700SLk(B)',
+               'powerWp': 700}
+            ],
+            'inverters': [],
+          }),
+        },
+      }],
+    });
+    expect(result.modules, hasLength(1));
+  });
+
+  test('falha ao encontrar JSON cortado, sem cadastrar dados inconsistentes', () {
+    expect(() => OpenRouterDatasheetService.parseCompletion({
+      'choices': [
+        {'finish_reason': 'length',
+         'message': {'content': '{"modules":[{"modelName":"modelo","powerWp":'}}
+      ]
+    }), throwsFormatException);
+  });
+
   test('recusa arquivos sem assinatura PDF antes de enviar', () async {
     await pdf.writeAsString('not a PDF');
     final service = OpenRouterDatasheetService(apiKey: 'test');
