@@ -2,6 +2,7 @@ import 'package:injectable/injectable.dart';
 
 import '../../domain/entities/solar_engine_result.dart';
 import '../../domain/entities/solar_scenario.dart';
+import '../../domain/services/hsp_input_validator.dart';
 import '../../domain/repositories/solar_repository.dart';
 import '../datasources/solar_remote_data_source.dart';
 import '../models/solar_quote_model.dart';
@@ -18,6 +19,14 @@ class SolarRepositoryImpl implements SolarRepository {
     required double longitude,
     required List<SolarScenario> items,
   }) async {
+    // A interface valida ao editar; esta camada impede payloads inválidos
+    // vindos de outros fluxos (importação, persistência ou chamadas futuras).
+    final validationError =
+        HspInputValidator.validateRequest(latitude, longitude, items);
+    if (validationError != null) {
+      throw FormatException(validationError);
+    }
+
     // 1. Convertemos a lista de ENTITIES em uma lista de MAPS (JSON) para a API
     final itemsPayload = items.map((item) => {
       'id_placa': item.id,

@@ -1,10 +1,11 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../../../../../domain/entities/pv_module.dart';
-import '../../../../../domain/entities/solar_scenario.dart';
-import '../../../../../domain/enums/ground_type.dart';
-import '../../../../../domain/enums/module_orientation.dart';
+import '../../../../domain/entities/pv_module.dart';
+import '../../../../domain/entities/solar_scenario.dart';
+import '../../../../domain/enums/ground_type.dart';
+import '../../../../domain/enums/module_orientation.dart';
 import '../../../../domain/entities/obstacle_config.dart';
+import '../../../../domain/services/hsp_input_validator.dart';
 import 'solar_input_field.dart';
 
 class AddScenarioModal extends StatefulWidget {
@@ -39,12 +40,12 @@ class AddScenarioModal extends StatefulWidget {
 class _AddScenarioModalState extends State<AddScenarioModal> {
   late TextEditingController inclinationController;
   final azimuthController = TextEditingController(text: "0");
-  final distanceToGroundController = TextEditingController(text: "0.015");
+  final distanceToGroundController = TextEditingController(text: "0.50");
   final arrayCountController = TextEditingController(text: "1");
   
-  final obsHeightController = TextEditingController(text: "0.0");
+  final obsHeightController = TextEditingController(text: "2.0");
   final obsDistanceController = TextEditingController(text: "5.0");
-  final obsWidthController = TextEditingController(text: "0.0");
+  final obsWidthController = TextEditingController(text: "2.0");
   final obsAzimuthController = TextEditingController(text: "0");
   final quantityController = TextEditingController(text: "1");
 
@@ -52,7 +53,7 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
 
   ModuleOrientation selectedOrientation = ModuleOrientation.portrait;
   GroundType selectedGround = GroundType.grass;
-  bool hasObstacle = true;
+  bool hasObstacle = false;
   String arrayDirection = "Direita";
   String? modalSelectedBrand;
   PvModule? modalSelectedModule;
@@ -78,6 +79,20 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
       // Define o modelo memorizado
       modalSelectedModule = widget.initialModule;
     }
+  }
+
+  @override
+  void dispose() {
+    inclinationController.dispose();
+    azimuthController.dispose();
+    distanceToGroundController.dispose();
+    arrayCountController.dispose();
+    obsHeightController.dispose();
+    obsDistanceController.dispose();
+    obsWidthController.dispose();
+    obsAzimuthController.dispose();
+    quantityController.dispose();
+    super.dispose();
   }
 
   // Métodos de Ajuda (Helper Dialogs) movidos para dentro da classe
@@ -117,10 +132,10 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
     
     double passo = larguraModuloEmMetros + 0.03; // 0.03m = 3cm de grampo/espaço
 
-    double dBase = double.tryParse(obsDistanceController.text) ?? 0.0;
-    double azBase = double.tryParse(obsAzimuthController.text) ?? 0.0;
+    double dBase = hasObstacle ? HspInputValidator.parseNumber(obsDistanceController.text)! : 0.0;
+    double azBase = hasObstacle ? HspInputValidator.parseNumber(obsAzimuthController.text)! : 0.0;
     
-    int totalParaGerar = int.tryParse(quantityController.text) ?? 1;
+    int totalParaGerar = int.parse(quantityController.text.trim());
 
     int loops = hasObstacle ? totalParaGerar : 1;
 
@@ -164,18 +179,18 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
               : 'Cenário $scenarioBaseIndex @ ${azimuthController.text}°, ${inclinationController.text}°',
           city: widget.city,
           state: widget.state,
-          inclination: double.tryParse(inclinationController.text) ?? 0.0,
-          azimuth: double.tryParse(azimuthController.text) ?? 0.0,
+          inclination: HspInputValidator.parseNumber(inclinationController.text)!,
+          azimuth: HspInputValidator.parseNumber(azimuthController.text)!,
           albedo: selectedGround.albedo,
-          distanceToGround: double.tryParse(distanceToGroundController.text) ?? 0.015,
+          distanceToGround: HspInputValidator.parseNumber(distanceToGroundController.text)!,
           module: modalSelectedModule!,
           orientation: selectedOrientation,
           quantityPvModule: hasObstacle ? 1 : totalParaGerar,
           obstacle: hasObstacle ? ObstacleConfig(
-            height: double.tryParse(obsHeightController.text) ?? 0.0,
+            height: HspInputValidator.parseNumber(obsHeightController.text)!,
             distance: dNova,
             azimuthReference: azNovo,
-            width: double.tryParse(obsWidthController.text) ?? 0.0,
+            width: HspInputValidator.parseNumber(obsWidthController.text)!,
           ) : null,
         ),
       );
@@ -196,6 +211,7 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
       ),
       child: Form(
         key: _formKey, // Vincula o formulário à chave global
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -207,19 +223,19 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
                 controller: inclinationController,
                 label: 'Inclinação (°)',
                 icon: Icons.architecture,
-                validator: (v) => (v == null || v.isEmpty) ? 'Informe a inclinação' : null,
+                validator: HspInputValidator.validateInclination,
               ),
               SolarInputField(
                 controller: azimuthController,
                 label: 'Azimute (°)',
                 icon: Icons.explore_outlined,
-                validator: (v) => (v == null || v.isEmpty) ? 'Informe o azimute' : null,
+                validator: HspInputValidator.validateAzimuth,
               ),
               SolarInputField(
                 controller: distanceToGroundController,
-                label: 'Distância do Solo (m)',
+                label: 'Altura do centro do módulo (m)',
                 icon: Icons.height,
-                validator: (v) => (v == null || v.isEmpty) ? 'Informe a distância ao solo' : null,
+                validator: HspInputValidator.validateModuleCenterHeight,
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<GroundType>(
@@ -286,12 +302,7 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
                   // Atualiza a variável interna para uso imediato se necessário
                   quantity = int.tryParse(val) ?? 1;
                 },
-                validator: (v) {
-                  if (v == null || v.isEmpty) return 'Informe a quantidade';
-                  final n = int.tryParse(v);
-                  if (n == null || n < 1) return 'Mínimo de 1 placa';
-                  return null;
-                },
+                validator: HspInputValidator.validateQuantity,
               ),
               const SizedBox(height: 15),
               // Orientação
@@ -338,27 +349,27 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
                   controller: obsHeightController,
                   label: 'Altura (m)',
                   icon: Icons.vertical_align_top,
-                  validator: (v) => (hasObstacle && (v == null || v.isEmpty)) ? 'Informe a altura' : null,
+                  validator: (v) => hasObstacle ? HspInputValidator.validateObstacleHeight(v) : null,
                 ),
                 SolarInputField(
                   controller: obsWidthController,
                   label: 'Largura (m)',
                   icon: Icons.width_full,
-                  validator: (v) => (hasObstacle && (v == null || v.isEmpty)) ? 'Informe a largura' : null,
+                  validator: (v) => hasObstacle ? HspInputValidator.validateObstacleWidth(v) : null,
                 ),
                 SolarInputField(
                   controller: obsAzimuthController,
                   label: 'Azimute do Obstáculo (°)',
                   icon: Icons.navigation,
                   onHelpTap: _showAzimuthHelp,
-                  validator: (v) => (hasObstacle && (v == null || v.isEmpty)) ? 'Informe o azimute do obs.' : null,
+                  validator: (v) => hasObstacle ? HspInputValidator.validateObstacleAzimuth(v) : null,
                 ),
                 SolarInputField(
                   controller: obsDistanceController,
                   label: 'Distância (m)',
                   icon: Icons.space_bar,
                   onHelpTap: _showObstacleHelp,
-                  validator: (v) => (hasObstacle && (v == null || v.isEmpty)) ? 'Informe a distância' : null,
+                  validator: (v) => hasObstacle ? HspInputValidator.validateObstacleDistance(v) : null,
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
