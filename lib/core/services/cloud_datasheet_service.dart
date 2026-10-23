@@ -21,6 +21,8 @@ class CloudDatasheetService {
   final Map<CloudAiProvider, String>? _models;
   final String? _accountId;
   final int? _timeoutOverride;
+  String? _cachedPdfPath;
+  String? _cachedPdfText;
 
   CloudDatasheetService({
     Dio? dio,
@@ -88,7 +90,17 @@ class CloudDatasheetService {
   }
 
   Future<String> _pdfToText(String path) async {
-    if (_reader != null) return (await _reader(path)).trim();
+    // Na mesma importação, Groq/Mistral/Cloudflare/Cohere reutilizam
+    // o resultado do PyMuPDF, evitando 12+ segundos por provedor.
+    if (_cachedPdfPath == path && _cachedPdfText != null) {
+      return _cachedPdfText!;
+    }
+    if (_reader != null) {
+      final text = (await _reader(path)).trim();
+      _cachedPdfPath = path;
+      _cachedPdfText = text;
+      return text;
+    }
     final executable = (dotenv.env['OLLAMA_PYTHON'] ?? 'python').trim();
     final script = File(
       '${Directory.current.path}${Platform.pathSeparator}tools'
@@ -110,7 +122,10 @@ class CloudDatasheetService {
     if (decoded is! Map || decoded['text'] is! String) {
       throw const FormatException('Extrator PyMuPDF retornou saída inválida.');
     }
-    return (decoded['text'] as String).trim();
+    final text = (decoded['text'] as String).trim();
+    _cachedPdfPath = path;
+    _cachedPdfText = text;
+    return text;
   }
 
   Future<AiExtractionResultModel> extract(

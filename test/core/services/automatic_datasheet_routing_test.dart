@@ -249,4 +249,31 @@ void main() {
           reason: 'Falhou provider ${provider.name}');
     }
   });
+  test('PyMuPDF é executado apenas uma vez entre provedores de texto', () async {
+    var pdfReads = 0;
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      final reply = jsonEncode({'modules': [
+        {'manufacturer': 'Jetion', 'modelName': 'JT690', 'powerWp': 690},
+      ], 'inverters': []});
+      handler.resolve(Response(requestOptions: request, statusCode: 200,
+        data: {'choices': [{'message': {'content': reply}}]}));
+    }));
+    final service = CloudDatasheetService(
+      dio: dio,
+      apiKeys: {
+        CloudAiProvider.groq: 'test-key',
+        CloudAiProvider.mistral: 'test-key',
+      },
+      pdfTextReader: (_) async {
+        pdfReads++;
+        return 'Jetion JT690 data sheet: 690 W nominal power.';
+      },
+      timeoutSeconds: 60,
+    );
+    await service.extract(CloudAiProvider.groq, pdf.path);
+    await service.extract(CloudAiProvider.mistral, pdf.path);
+    expect(pdfReads, 1);
+  });
+
 }
