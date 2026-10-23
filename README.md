@@ -177,3 +177,55 @@ incluir cópias das fichas de terceiros no repositório:
 **Atenção:** diferentes revisões comerciais da mesma família podem
 informar potências CC recomendadas distintas. O extrator deve usar a
 revisão do **PDF selecionado**, nunca substituir seus dados pelos gabaritos.
+
+
+## Testes locais de datasheets via Ollama (Windows)
+
+O mesmo botão **Importar datasheet PDF com IA** agora escolhe o provedor
+pela configuração do `.env`:
+
+```dotenv
+# true = Ollama local; false = OpenRouter (padrão)
+OLLAMA_ENABLED=true
+OLLAMA_MODEL=qwen3.8:27b
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_NUM_CTX=16384
+OLLAMA_PYTHON=python
+```
+
+Ollama ativo: não é necessário configurar `OPENROUTER_API_KEY`, e falhas
+no serviço local **não** geram fallback para OpenRouter nem consumo de
+créditos. Ollama desativado: o fluxo original OpenRouter continua ativo.
+O valor de `OLLAMA_ENABLED` deve ser explicitamente `true` ou `false`.
+Reinicie o aplicativo após alterar o `.env`.
+
+### Preparação
+
+```powershell
+python -m pip install --upgrade pymupdf
+ollama list
+Invoke-RestMethod http://localhost:11434/api/tags
+flutter pub get
+flutter run -d windows
+```
+
+Se a API local estiver indisponível, execute `ollama serve` em um terminal.
+Os modelos disponíveis dependem de seu Ollama; comece por `qwen3.8:27b`
+ou `nimble:9b`. Eles podem exigir RAM/VRAM e levar mais tempo que um
+modelo na nuvem.
+
+O script `tools/ollama_pdf_extract.py` extrai texto e tabelas
+com PyMuPDF, passa-os ao endpoint local `/api/chat` e recebe JSON estruturado.
+O resultado é normalizado pelas **mesmas entidades e auditoria semântica**
+já utilizadas com OpenRouter. Uma segunda chamada local recupera campos
+ausentes. O PDF em si **não é enviado** ao OpenRouter.
+
+**Limitação importante:** esse modo é experimental para desenvolvimento
+no Windows, exige Python e PDFs com texto pesquisável. Datasheets somente
+digitalizados exigem OCR (ainda não implementado). Para distribuição
+em outras plataformas, é necessário um extrator PDF multiplataforma.
+Com `OLLAMA_ENABLED=true`, o endereço é intencionalmente restrito a
+`localhost`/`127.0.0.1` para evitar transferências involuntárias.
+O JSON da IA não é automaticamente confiável: revise os campos antes
+de salvar ou dimensionar. Nenhuma dependência de Python é exigida
+quando `OLLAMA_ENABLED=false`.
