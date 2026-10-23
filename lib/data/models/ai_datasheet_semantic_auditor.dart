@@ -109,8 +109,8 @@ class AiDatasheetSemanticAuditor {
       var count = i.mpptCount;
       var inputs = i.totalDcInputs;
       if (count != null && inputs != null && inputs < count) {
-        issues.add('INCONSISTENTE: $count rastreadores MPPT para apenas '
-            '$inputs entradas CC. Entradas precisam ser >= MPPTs.');
+        issues.add('INCONSISTENTE: $count MPPTs para apenas $inputs '
+            'entradas CC. Entradas precisam ser >= MPPTs.');
       }
       if (trackers == null && _row(source, RegExp(
             r'(?:quantidade\s+(?:de\s+)?mppts?|number\s+of\s+mppts?)',
@@ -176,232 +176,17 @@ class AiDatasheetSemanticAuditor {
     for (var n = 0; n < lines.length; n++) {
       final match = label.firstMatch(lines[n]);
       if (match == null) continue;
-      // PDFs convertidos para Markdown normalmente possuem células como
-      // "| Operating Temperature | -40°C-+85°C |". Sem remover bordas
-      // e formatação, os parsers numéricos deixam os campos em branco.
-      String clean(String value) => value.trim()
+      // Conversão PDF->Markdown: "| Maximum Series Fuse | 35A |"
+      // pode conter pipes, negrito e separadores na mesma célula.
+      String clean(String text) => text.trim()
           .replaceFirst(RegExp(r'^[\s*_:|]+'), '')
-          .replaceFirst(RegExp(r'[\s*_|]+
-    }
-    return null;
-  }
-
-  static int? _uniformRow(String source, RegExp label) {
-    final row = _row(source, label);
-    if (row == null) return null;
-    final values = row.replaceAll('|', ' ').trim();
-    if (!RegExp(r'^\d{1,2}(?:\s+\d{1,2})*$').hasMatch(values)) return null;
-    final nums = values.split(RegExp(r'\s+')).map(int.parse).toList();
-    if (nums.any((n) => n <= 0)) return null;
-    return nums.every((n) => n == nums.first) ? nums.first : null;
-  }
-
-  static double? _fuse(String text) {
-    final row = _row(text, RegExp(
-        r'(?:maximum\s+series\s+fuse|fus[ií]vel\s+m[aá]ximo)',
-        caseSensitive: false));
-    if (row == null) return null;
-    final match = RegExp(r'^\s*(\d+(?:[.,]\d+)?)\s*A\b',
-        caseSensitive: false).firstMatch(row);
-    return match == null ? null :
-        double.tryParse(match.group(1)!.replaceAll(',', '.'));
-  }
-
-  static (double, double)? _temperatures(String text) {
-    final row = _row(text, RegExp(
-        r'(?:operating\s+temperature|temperatura\s+(?:de\s+)?opera[cç][aã]o)',
-        caseSensitive: false));
-    if (row == null) return null;
-    final m = RegExp(
-        r'(-\d{1,3})\s*°?\s*C?\s*[-–~.]{1,3}\s*\+?(\d{1,3})\s*°?\s*C',
-        caseSensitive: false).firstMatch(row);
-    if (m == null) return null;
-    final lo = double.parse(m.group(1)!);
-    final hi = double.parse(m.group(2)!);
-    return lo < hi ? (lo, hi) : null;
-  }
-
-  static int? _warranty(String text, {required bool product}) {
-    final patterns = product ? [
-      RegExp(r'(\d{1,2})\s*years?\s+(?:product|material|'
-          r'workmanship|physical)\s+warranty', caseSensitive: false),
-      RegExp(r'(?:product|material|workmanship|physical)\s+warranty'
-          r'\s*:?\s*(\d{1,2})\s*years?', caseSensitive: false),
-      RegExp(r'garantia\s+(?:f[ií]sica|do\s+produto)\s*:?\s*'
-          r'(\d{1,2})\s*anos', caseSensitive: false),
-    ] : [
-      RegExp(r'(\d{1,2})\s*years?\s+(?:linear\s+)?'
-          r'(?:performance|power)\s+warranty', caseSensitive: false),
-    ];
-    for (final pattern in patterns) {
-      final m = pattern.firstMatch(text);
-      if (m != null) return int.tryParse(m.group(1)!);
-    }
-    return null;
-  }
-
-  static double? _finalLoss(String text) {
-    final m = RegExp(
-      r'(?:final\s+power\s+loss|total\s+degradation|'
-      r'perda\s+(?:final|total)\s+(?:de\s+efici[eê]ncia)?)'
-      r'\s*:?\s*(\d+(?:[.,]\d+)?)\s*%',
-      caseSensitive: false,
-    ).firstMatch(text);
-    return m == null ? null :
-        double.tryParse(m.group(1)!.replaceAll(',', '.'));
-  }
-
-  static double? _acCurrent(
-      String text, AiExtractedInverter target, List<AiExtractedInverter> all) {
-    String? header;
-    for (final line in text.split(RegExp(r'\r?\n'))) {
-      if (RegExp(r'\b(?:modelo|model)\b', caseSensitive: false)
-          .hasMatch(line) &&
-          line.toLowerCase().contains(target.modelName.toLowerCase())) {
-        header = line;
-        break;
-      }
-    }
-    if (header == null) return null;
-    final heading = header.toLowerCase();
-    final models = all.where((i) => heading.contains(i.modelName.toLowerCase()))
-        .toList()
-      ..sort((a, b) => heading.indexOf(a.modelName.toLowerCase())
-          .compareTo(heading.indexOf(b.modelName.toLowerCase())));
-    if (models.isEmpty || models.length != all.length) return null;
-    final row = _row(text, RegExp(
-      r'(?:corrente\s+m[aá]x(?:ima|\.)?\s+de\s+sa[ií]da|'
-      r'max(?:imum)?\.?\s+(?:ac\s+)?output\s+current)',
-      caseSensitive: false,
-    ));
-    if (row == null) return null;
-    final values = RegExp(r'(\d+(?:[.,]\d+)?)\s*A\b',
-        caseSensitive: false)
-        .allMatches(row)
-        .map((m) => double.tryParse(m.group(1)!.replaceAll(',', '.')))
-        .toList();
-    if (values.length != models.length || values.any((v) => v == null)) {
-      return null;
-    }
-    final index = models.indexWhere(
-        (i) => i.modelName.toLowerCase() == target.modelName.toLowerCase());
-    return index < 0 ? null : values[index];
-  }
-}
-), '')
+          .replaceFirst(RegExp(r'[\s*_|]+$'), '')
           .trim();
       final rest = clean(lines[n].substring(match.end));
       if (rest.isNotEmpty) return rest;
       if (n + 1 < lines.length) {
         final next = clean(lines[n + 1]);
-        if (RegExp(r'^[\d\s|/.,+°CA-]+
-    }
-    return null;
-  }
-
-  static int? _uniformRow(String source, RegExp label) {
-    final row = _row(source, label);
-    if (row == null) return null;
-    final values = row.replaceAll('|', ' ').trim();
-    if (!RegExp(r'^\d{1,2}(?:\s+\d{1,2})*$').hasMatch(values)) return null;
-    final nums = values.split(RegExp(r'\s+')).map(int.parse).toList();
-    if (nums.any((n) => n <= 0)) return null;
-    return nums.every((n) => n == nums.first) ? nums.first : null;
-  }
-
-  static double? _fuse(String text) {
-    final row = _row(text, RegExp(
-        r'(?:maximum\s+series\s+fuse|fus[ií]vel\s+m[aá]ximo)',
-        caseSensitive: false));
-    if (row == null) return null;
-    final match = RegExp(r'^\s*(\d+(?:[.,]\d+)?)\s*A\b',
-        caseSensitive: false).firstMatch(row);
-    return match == null ? null :
-        double.tryParse(match.group(1)!.replaceAll(',', '.'));
-  }
-
-  static (double, double)? _temperatures(String text) {
-    final row = _row(text, RegExp(
-        r'(?:operating\s+temperature|temperatura\s+(?:de\s+)?opera[cç][aã]o)',
-        caseSensitive: false));
-    if (row == null) return null;
-    final m = RegExp(
-        r'(-\d{1,3})\s*°?\s*C?\s*[-–~.]{1,3}\s*\+?(\d{1,3})\s*°?\s*C',
-        caseSensitive: false).firstMatch(row);
-    if (m == null) return null;
-    final lo = double.parse(m.group(1)!);
-    final hi = double.parse(m.group(2)!);
-    return lo < hi ? (lo, hi) : null;
-  }
-
-  static int? _warranty(String text, {required bool product}) {
-    final patterns = product ? [
-      RegExp(r'(\d{1,2})\s*years?\s+(?:product|material|'
-          r'workmanship|physical)\s+warranty', caseSensitive: false),
-      RegExp(r'(?:product|material|workmanship|physical)\s+warranty'
-          r'\s*:?\s*(\d{1,2})\s*years?', caseSensitive: false),
-      RegExp(r'garantia\s+(?:f[ií]sica|do\s+produto)\s*:?\s*'
-          r'(\d{1,2})\s*anos', caseSensitive: false),
-    ] : [
-      RegExp(r'(\d{1,2})\s*years?\s+(?:linear\s+)?'
-          r'(?:performance|power)\s+warranty', caseSensitive: false),
-    ];
-    for (final pattern in patterns) {
-      final m = pattern.firstMatch(text);
-      if (m != null) return int.tryParse(m.group(1)!);
-    }
-    return null;
-  }
-
-  static double? _finalLoss(String text) {
-    final m = RegExp(
-      r'(?:final\s+power\s+loss|total\s+degradation|'
-      r'perda\s+(?:final|total)\s+(?:de\s+efici[eê]ncia)?)'
-      r'\s*:?\s*(\d+(?:[.,]\d+)?)\s*%',
-      caseSensitive: false,
-    ).firstMatch(text);
-    return m == null ? null :
-        double.tryParse(m.group(1)!.replaceAll(',', '.'));
-  }
-
-  static double? _acCurrent(
-      String text, AiExtractedInverter target, List<AiExtractedInverter> all) {
-    String? header;
-    for (final line in text.split(RegExp(r'\r?\n'))) {
-      if (RegExp(r'\b(?:modelo|model)\b', caseSensitive: false)
-          .hasMatch(line) &&
-          line.toLowerCase().contains(target.modelName.toLowerCase())) {
-        header = line;
-        break;
-      }
-    }
-    if (header == null) return null;
-    final heading = header.toLowerCase();
-    final models = all.where((i) => heading.contains(i.modelName.toLowerCase()))
-        .toList()
-      ..sort((a, b) => heading.indexOf(a.modelName.toLowerCase())
-          .compareTo(heading.indexOf(b.modelName.toLowerCase())));
-    if (models.isEmpty || models.length != all.length) return null;
-    final row = _row(text, RegExp(
-      r'(?:corrente\s+m[aá]x(?:ima|\.)?\s+de\s+sa[ií]da|'
-      r'max(?:imum)?\.?\s+(?:ac\s+)?output\s+current)',
-      caseSensitive: false,
-    ));
-    if (row == null) return null;
-    final values = RegExp(r'(\d+(?:[.,]\d+)?)\s*A\b',
-        caseSensitive: false)
-        .allMatches(row)
-        .map((m) => double.tryParse(m.group(1)!.replaceAll(',', '.')))
-        .toList();
-    if (values.length != models.length || values.any((v) => v == null)) {
-      return null;
-    }
-    final index = models.indexWhere(
-        (i) => i.modelName.toLowerCase() == target.modelName.toLowerCase());
-    return index < 0 ? null : values[index];
-  }
-}
-).hasMatch(next)) return next;
+        if (RegExp(r'^[\d\s|/.,+°CA-]+$').hasMatch(next)) return next;
       }
     }
     return null;
