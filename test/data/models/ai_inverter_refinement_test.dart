@@ -29,8 +29,7 @@ void main() {
   });
 
   test('preserva o início e fim de OCR com mais de 18 mil caracteres', () {
-    final source = 'CABECALHO_STC\n' +
-        List.filled(20000, 'x').join() + '\nTABELA_FINAL';
+    final source = 'CABECALHO_STC\n${List.filled(20000, 'x').join()}\nTABELA_FINAL';
     final text = AiInverterRefinement.parsedPdfText({
       'choices': [{'message': {'annotations': [{
         'type': 'file',
