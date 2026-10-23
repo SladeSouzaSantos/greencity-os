@@ -1,3 +1,5 @@
+import 'ai_numeric_value_parser.dart';
+
 /// Resultado tipado da extração de datasheets. Valores não informados
 /// permanecem ausentes e precisam de revisão antes de salvar no catálogo.
 class AiExtractionResultModel {
@@ -28,21 +30,8 @@ class AiExtractionResultModel {
   }
 }
 
-double? _number(dynamic raw) {
-  if (raw == null) return null;
-  if (raw is num) return raw.toDouble().isFinite ? raw.toDouble() : null;
-  if (raw is String) {
-    final result = double.tryParse(raw.trim().replaceAll(',', '.'));
-    return result != null && result.isFinite ? result : null;
-  }
-  return null;
-}
-
-int? _integer(dynamic raw) {
-  final value = _number(raw);
-  if (value == null || value != value.roundToDouble()) return null;
-  return value.toInt();
-}
+double? _number(dynamic raw) => AiNumericValueParser.number(raw);
+int? _integer(dynamic raw) => AiNumericValueParser.integer(raw);
 
 String _string(dynamic raw, [String fallback = '']) =>
     raw is String ? raw.trim() : fallback;
@@ -154,6 +143,8 @@ class AiExtractedInverter {
   final double? minMpptVoltage;
   final double? maxMpptVoltage;
   final double? maxInputCurrentPerMppt;
+  final List<double>? mpptInputCurrentsA;
+  final List<double>? mpptShortCircuitCurrentsA;
   final double? maxShortCircuitCurrent;
   final double? maxOutputCurrent;
   final double? nominalVoltageAc;
@@ -181,6 +172,8 @@ class AiExtractedInverter {
     this.minMpptVoltage,
     this.maxMpptVoltage,
     this.maxInputCurrentPerMppt,
+    this.mpptInputCurrentsA,
+    this.mpptShortCircuitCurrentsA,
     this.maxShortCircuitCurrent,
     this.maxOutputCurrent,
     this.nominalVoltageAc,
@@ -195,23 +188,59 @@ class AiExtractedInverter {
     this.warrantyYears,
   });
 
+  bool get hasAsymmetricMpptCurrents =>
+      mpptInputCurrentsA != null && mpptInputCurrentsA!.length > 1 &&
+      mpptInputCurrentsA!.any((item) => item != mpptInputCurrentsA!.first);
+
+  int get missingEssentialFields {
+    final values = <num?>[
+      nominalPowerKw, maxInputPowerKw, mpptCount, maxInputVoltage,
+      minMpptVoltage, maxMpptVoltage, maxInputCurrentPerMppt,
+    ];
+    return values.where((v) => v == null || !v.isFinite || v <= 0).length;
+  }
+
   factory AiExtractedInverter.fromJson(Map<String, dynamic> json) {
+    final rawRange = json['mpptVoltageRange'] ?? json['mpptRange'];
+    final range = AiNumericValueParser.mpptRange(rawRange);
+    final currents = AiNumericValueParser.currentList(
+      json['mpptInputCurrentsA'] ?? json['maxInputCurrentPerMppt'],
+    );
+    final shortCircuits = AiNumericValueParser.currentList(
+      json['mpptShortCircuitCurrentsA'] ?? json['maxShortCircuitCurrent'],
+    );
     return AiExtractedInverter(
       manufacturer: _string(json['manufacturer']),
       modelName: _string(json['modelName']),
-      nominalPowerKw: _number(json['nominalPowerKw']) ?? 0,
-      maxInputPowerKw: _number(json['maxInputPowerKw']),
-      maxEfficiency: _number(json['maxEfficiency']),
-      euroEfficiency: _number(json['euroEfficiency']),
-      mpptCount: _integer(json['mpptCount']),
-      maxInputVoltage: _number(json['maxInputVoltage']),
-      nominalVoltageDc: _number(json['nominalVoltageDc']),
+      nominalPowerKw: AiNumericValueParser.powerKw(
+        json['nominalPowerKw'] ?? json['nominalAcPowerKw'] ??
+        json['nominalAcPowerW'] ?? json['nominalPowerW'],
+        rawIsWatts: json['nominalPowerKw'] == null &&
+            json['nominalAcPowerKw'] == null,
+      ) ?? 0,
+      maxInputPowerKw: AiNumericValueParser.powerKw(
+        json['maxInputPowerKw'] ?? json['maxInputPowerWp'] ??
+            json['maxRecommendedPvPowerWp'],
+        rawIsWatts: json['maxInputPowerKw'] == null,
+      ),
+      maxEfficiency: _number(json['maxEfficiency'] ?? json['maxEfficiencyPercent']),
+      euroEfficiency: _number(json['euroEfficiency'] ?? json['europeanEfficiency']),
+      mpptCount: AiNumericValueParser.mpptCount(json['mpptCount'] ?? json['mpptTrackerCount']),
+      maxInputVoltage: _number(json['maxInputVoltage'] ?? json['maxDcVoltage']),
+      nominalVoltageDc: _number(json['nominalVoltageDc']) ??
+          AiNumericValueParser.nominalFromMpptRange(rawRange),
       startVoltage: _number(json['startVoltage']),
-      minMpptVoltage: _number(json['minMpptVoltage']),
-      maxMpptVoltage: _number(json['maxMpptVoltage']),
-      maxInputCurrentPerMppt: _number(json['maxInputCurrentPerMppt']),
-      maxShortCircuitCurrent: _number(json['maxShortCircuitCurrent']),
-      maxOutputCurrent: _number(json['maxOutputCurrent']),
+      minMpptVoltage: _number(json['minMpptVoltage']) ?? (range == null ? null : range.first),
+      maxMpptVoltage: _number(json['maxMpptVoltage']) ?? (range == null ? null : range.last),
+      maxInputCurrentPerMppt:
+          AiNumericValueParser.minCurrent(currents) ??
+          _number(json['maxInputCurrentPerMppt']),
+      mpptInputCurrentsA: currents,
+      mpptShortCircuitCurrentsA: shortCircuits,
+      maxShortCircuitCurrent:
+          AiNumericValueParser.minCurrent(shortCircuits) ??
+          _number(json['maxShortCircuitCurrent']),
+      maxOutputCurrent: _number(json['maxOutputCurrent'] ?? json['maxAcOutputCurrent']),
       nominalVoltageAc: _number(json['nominalVoltageAc']),
       inverterType: _string(json['inverterType']),
       gridConnection: _string(json['gridConnection']),
