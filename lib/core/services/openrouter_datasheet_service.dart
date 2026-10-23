@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../../data/models/ai_extraction_result_model.dart';
+import '../../data/models/ai_inverter_refinement.dart';
 import 'openrouter_free_model_policy.dart';
 
 /// Envia PDFs escolhidos pelo usuário ao OpenRouter.
@@ -181,7 +182,37 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
       message: message,
     );
     try {
-      return parseCompletion(response);
+      final initial = parseCompletion(response);
+      if (!AiInverterRefinement.needsRefinement(initial)) return initial;
+
+      // O CloudflareAI pode devolver markdown em file.annotations;
+      // uma única segunda chamada SÓ DE TEXTO evita retransmitir o PDF
+      // em Base64 (particularmente importante em arquivos grandes).
+      final extractedText = AiInverterRefinement.parsedPdfText(response);
+      if (extractedText == null) return initial;
+
+      try {
+        final refined = await _request(
+          models: models,
+          engine: engine,
+          key: key,
+          message: {
+            'role': 'user',
+            'content': [
+              {
+                'type': 'text',
+                'text': AiInverterRefinement.prompt(initial, extractedText),
+              },
+            ],
+          },
+        );
+        final additional = parseCompletion(refined);
+        return AiInverterRefinement.mergeMissing(initial, additional);
+      } on Exception {
+        // A segunda chamada é opcional. Se falhar (por exemplo, quota
+        // do :free), não descarte o que foi extraído na primeira.
+        return initial;
+      }
     } on FormatException {
       // O fallback do OpenRouter só lida com falhas dos provedores.
       // Um HTTP 200 com JSON inválido não ativa esse fallback.
@@ -205,6 +236,10 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
     bool includeResponseFormat = true,
   }) async {
     try {
+      final parts = message['content'];
+      final hasPdf = parts is List && parts.any(
+        (part) => part is Map && part['type'] == 'file',
+      );
       final response = await _dio.post<dynamic>(
         endpoint,
         data: {
@@ -214,12 +249,13 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
           'max_tokens': 8192,
           if (includeResponseFormat)
             'response_format': {'type': 'json_object'},
-          'plugins': [
-            {
-              'id': 'file-parser',
-              'pdf': {'engine': engine},
-            },
-          ],
+          if (hasPdf)
+            'plugins': [
+              {
+                'id': 'file-parser',
+                'pdf': {'engine': engine},
+              },
+            ],
           'messages': [message],
         },
         options: Options(headers: {
