@@ -20,31 +20,46 @@ lib/
 └── main.dart          # Ponto de entrada e Injeção de Dependência
 ```
 
-## Configuração local da IA (OpenRouter)
+## Configuração local da IA (OpenRouter — somente modelos gratuitos)
 
-1. Copie `.env.example` para `.env` na raiz do projeto e configure
-   `OPENROUTER_API_KEY` com uma chave da sua conta OpenRouter.
-2. Configure `OPENROUTER_MODEL` com o ID do modelo desejado em
-   https://openrouter.ai/models. O padrão `google/gemini-3.8-flash` usa
-   Gemini **por meio do OpenRouter**, mas você pode trocar por qualquer
-   modelo compatível. OpenRouter é um gateway, não um modelo de IA.
-3. `OPENROUTER_PDF_ENGINE=cloudflare-ai` usa processamento PDF para
-   markdown/texto sem custo adicional de OCR; `native` exige modelo
-   compatível com PDF; `mistral-ocr` pode ter cobrança adicional por página.
-4. Execute `flutter pub get` e `flutter run -d windows`.
+1. Copie `.env.example` para `.env` e configure
+   `OPENROUTER_API_KEY` com a chave da sua conta.
+2. `OPENROUTER_MODEL` define o modelo primário. **Deve terminar com
+   `:free`**, pois o importador recusa modelos pagos e auto-routers.
+3. `OPENROUTER_FALLBACK_MODELS` lista os modelos alternativos separados
+   por vírgula. O OpenRouter tenta os candidatos na ordem quando houver
+   falhas elegíveis de inferência (rate limit, indisponibilidade etc.).
+   Caso a resposta HTTP 200 não contenha JSON extraível, o aplicativo
+   realiza no máximo mais uma tentativa, iniciando no segundo modelo.
+   Para desativar fallback, deixe `OPENROUTER_FALLBACK_MODELS=`.
+4. `OPENROUTER_PDF_ENGINE=cloudflare-ai` converte o PDF em markdown
+   sem custo extra de parsing. `native` depende de suporte do modelo.
+   `mistral-ocr` foi bloqueado, pois pode cobrar por página.
+5. Execute `flutter pub get` e `flutter run -d windows`.
 
-O arquivo `.env` está no `.gitignore`, é carregado antes de iniciar
-a aplicação e **não é modificado automaticamente**. Se ainda estiver com
-`GEMINI_API_KEY`, substitua manualmente pela nova chave OpenRouter.
-Uma chave Gemini relatada como vazada deve ser revogada em seu próprio
-provedor; o OpenRouter exige uma chave nova e independente.
+Exemplo no `.env` local (nunca commitar a chave):
+```dotenv
+OPENROUTER_API_KEY=COLOQUE_SUA_CHAVE_LOCAL
+OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free
+OPENROUTER_FALLBACK_MODELS=nvidia/nemotron-3-super-120b-a12b:free
+OPENROUTER_PDF_ENGINE=cloudflare-ai
+```
 
-**Segurança:** `flutter_dotenv` incorpora o `.env` nos assets do aplicativo,
-permitindo extrair qualquer chave incluída no build distribuído. Por isso,
-use essa configuração exclusivamente para desenvolvimento local. Em produção,
-implemente uma API backend com chave no servidor, autenticação e limites de uso.
-O importador OpenRouter usa Dio independente **sem LogInterceptor**, evitando
-registrar o PDF ou o token no console durante a importação.
+**Observação sobre HTTP 400:** um erro de formato de PDF/requisição não
+fica correto só por trocar de modelo. O serviço tenta remover
+`response_format` **uma vez** apenas quando o erro explicitamente
+indica que o modelo não suporta essa opção. Caso contrário, apresenta
+uma mensagem de diagnóstico, sem repetir requisições inválidas.
+No [Activity do OpenRouter](https://openrouter.ai/activity) você pode
+verificar o motivo completo e qual modelo atendeu a requisição.
+
+O `.env` está no `.gitignore` e não é alterado pelos commits.
+Chaves comprometidas de outros provedores devem ser revogadas.
+**Segurança:** `flutter_dotenv` inclui o `.env` nos assets distribuídos.
+Essa abordagem é somente para desenvolvimento; em produção use backend
+autenticado que proteja a chave. O OpenRouter e o provedor selecionado
+recebem o PDF anexado. Não envie documentos confidenciais a endpoints
+gratuitos sem revisar seus termos.
 
 ## Identidade visual — ícone do aplicativo
 
