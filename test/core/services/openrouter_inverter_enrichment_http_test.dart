@@ -12,7 +12,7 @@ void main() {
 
   setUp(() async {
     temp = await Directory.systemTemp.createTemp('inverter_refinement_');
-    pdf = File(temp.path + '/datasheet.pdf');
+    pdf = File('${temp.path}/datasheet.pdf');
     await pdf.writeAsString('%PDF-1.4\n% in-memory test\n');
   });
 

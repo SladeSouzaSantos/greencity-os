@@ -19,6 +19,8 @@ void main() {
     expect(AiNumericValueParser.nominalFromMpptRange(
         '80 V - 560 V / 360 V'), 360);
     expect(AiNumericValueParser.mpptCount('3/1'), 3);
+    expect(AiNumericValueParser.mpptCount('2 (1 / 1)'), 2);
+    expect(AiNumericValueParser.mpptCount('3 MPPTs'), 3);
   });
 
   test('não soma MPPTs diferentes: preserva vetor e usa mínimo conservador', () {
