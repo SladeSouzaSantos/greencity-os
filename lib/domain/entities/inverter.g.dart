@@ -143,6 +143,11 @@ const InverterSchema = CollectionSchema(
       id: 24,
       name: r'weight',
       type: IsarType.double,
+    ),
+    r'mpptConfigurationJson': PropertySchema(
+      id: 25,
+      name: r'mpptConfigurationJson',
+      type: IsarType.string,
     )
   },
   estimateSize: _inverterEstimateSize,
@@ -183,6 +188,9 @@ int _inverterEstimateSize(
   bytesCount += 3 + object.manufacturer.length * 3;
   bytesCount += 3 + object.modelName.length * 3;
   bytesCount += 3 + object.protectionDegree.length * 3;
+  if (object.mpptConfigurationJson != null) {
+    bytesCount += 3 + object.mpptConfigurationJson!.length * 3;
+  }
   return bytesCount;
 }
 
@@ -217,6 +225,7 @@ void _inverterSerialize(
   writer.writeDouble(offsets[22], object.startVoltage);
   writer.writeLong(offsets[23], object.warrantyYears);
   writer.writeDouble(offsets[24], object.weight);
+  writer.writeString(offsets[25], object.mpptConfigurationJson);
 }
 
 Inverter _inverterDeserialize(
@@ -255,6 +264,7 @@ Inverter _inverterDeserialize(
     startVoltage: reader.readDouble(offsets[22]),
     warrantyYears: reader.readLongOrNull(offsets[23]) ?? 10,
     weight: reader.readDouble(offsets[24]),
+    mpptConfigurationJson: reader.readStringOrNull(offsets[25]),
   );
   object.id = id;
   return object;
@@ -321,6 +331,8 @@ P _inverterDeserializeProp<P>(
       return (reader.readLongOrNull(offset) ?? 10) as P;
     case 24:
       return (reader.readDouble(offset)) as P;
+    case 25:
+      return (reader.readStringOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }

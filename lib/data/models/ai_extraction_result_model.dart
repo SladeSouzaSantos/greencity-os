@@ -1,19 +1,52 @@
+import 'ai_numeric_value_parser.dart';
+
+/// Resultado tipado da extração de datasheets. Valores não informados
+/// permanecem ausentes e precisam de revisão antes de salvar no catálogo.
 class AiExtractionResultModel {
   final List<AiExtractedModule> modules;
   final List<AiExtractedInverter> inverters;
+  /// Mensagens da conferência com o texto original do datasheet.
+  final Map<String, List<String>> auditWarnings;
 
-  AiExtractionResultModel({required this.modules, required this.inverters});
+  const AiExtractionResultModel({
+    required this.modules,
+    required this.inverters,
+    this.auditWarnings = const {},
+  });
 
   factory AiExtractionResultModel.fromJson(Map<String, dynamic> json) {
+    List<Map<String, dynamic>> objects(dynamic raw) {
+      if (raw is! List) return const [];
+      return raw.whereType<Map>().map(
+        (item) => Map<String, dynamic>.from(item),
+      ).toList();
+    }
+
     return AiExtractionResultModel(
-      modules: (json['modules'] as List? ?? [])
-          .map((e) => AiExtractedModule.fromJson(e))
+      modules: objects(json['modules'])
+          .map(AiExtractedModule.fromJson)
           .toList(),
-      inverters: (json['inverters'] as List? ?? [])
-          .map((e) => AiExtractedInverter.fromJson(e))
+      inverters: objects(json['inverters'])
+          .map(AiExtractedInverter.fromJson)
           .toList(),
     );
   }
+}
+
+double? _number(dynamic raw) => AiNumericValueParser.number(raw);
+int? _integer(dynamic raw) => AiNumericValueParser.integer(raw);
+
+String _string(dynamic raw, [String fallback = '']) =>
+    raw is String ? raw.trim() : fallback;
+
+bool? _boolean(dynamic raw) {
+  if (raw is bool) return raw;
+  if (raw is String) {
+    final value = raw.trim().toLowerCase();
+    if (value == 'true') return true;
+    if (value == 'false') return false;
+  }
+  return null;
 }
 
 class AiExtractedModule {
@@ -30,11 +63,19 @@ class AiExtractedModule {
   final double? width;
   final double? weight;
   final bool isBifacial;
+  final bool? isTier1;
+  final double? maxSystemVoltage;
   final double? tempCoefPmax;
   final double? tempCoefVoc;
   final double? tempCoefIsc;
+  final double? minOperatingTemp;
+  final double? maxOperatingTemp;
+  final double? fuseCurrent;
+  final int? physicalWarranty;
+  final int? efficiencyWarranty;
+  final double? efficiencyLoss;
 
-  AiExtractedModule({
+  const AiExtractedModule({
     required this.manufacturer,
     required this.modelName,
     required this.powerWp,
@@ -48,29 +89,45 @@ class AiExtractedModule {
     this.width,
     this.weight,
     required this.isBifacial,
+    this.isTier1,
+    this.maxSystemVoltage,
     this.tempCoefPmax,
     this.tempCoefVoc,
     this.tempCoefIsc,
+    this.minOperatingTemp,
+    this.maxOperatingTemp,
+    this.fuseCurrent,
+    this.physicalWarranty,
+    this.efficiencyWarranty,
+    this.efficiencyLoss,
   });
 
   factory AiExtractedModule.fromJson(Map<String, dynamic> json) {
     return AiExtractedModule(
-      manufacturer: json['manufacturer'] ?? '',
-      modelName: json['modelName'] ?? '',
-      powerWp: (json['powerWp'] ?? 0).toInt(),
-      efficiency: (json['efficiency'] ?? 0).toDouble(),
-      cellTechnology: json['cellTechnology'] ?? 'TOPCon',
-      vOc: (json['vOc'] ?? 0).toDouble(),
-      iSc: (json['iSc'] ?? 0).toDouble(),
-      vMp: (json['vMp'] ?? 0).toDouble(),
-      iMp: (json['iMp'] ?? 0).toDouble(),
-      length: (json['length'])?.toDouble(),
-      width: (json['width'])?.toDouble(),
-      weight: (json['weight'])?.toDouble(),
-      isBifacial: json['isBifacial'] ?? false,
-      tempCoefPmax: (json['tempCoefPmax'])?.toDouble(),
-      tempCoefVoc: (json['tempCoefVoc'])?.toDouble(),
-      tempCoefIsc: (json['tempCoefIsc'])?.toDouble(),
+      manufacturer: _string(json['manufacturer']),
+      modelName: _string(json['modelName']),
+      powerWp: _integer(json['powerWp']) ?? 0,
+      efficiency: _number(json['efficiency']) ?? 0,
+      cellTechnology: _string(json['cellTechnology']),
+      vOc: _number(json['vOc']) ?? 0,
+      iSc: _number(json['iSc']) ?? 0,
+      vMp: _number(json['vMp']) ?? 0,
+      iMp: _number(json['iMp']) ?? 0,
+      length: _number(json['length']),
+      width: _number(json['width']),
+      weight: _number(json['weight']),
+      isBifacial: _boolean(json['isBifacial']) ?? false,
+      isTier1: _boolean(json['isTier1']),
+      maxSystemVoltage: _number(json['maxSystemVoltage']),
+      tempCoefPmax: _number(json['tempCoefPmax']),
+      tempCoefVoc: _number(json['tempCoefVoc']),
+      tempCoefIsc: _number(json['tempCoefIsc']),
+      minOperatingTemp: _number(json['minOperatingTemp']),
+      maxOperatingTemp: _number(json['maxOperatingTemp']),
+      fuseCurrent: _number(json['fuseCurrent']),
+      physicalWarranty: _integer(json['physicalWarranty']),
+      efficiencyWarranty: _integer(json['efficiencyWarranty']),
+      efficiencyLoss: _number(json['efficiencyLoss']),
     );
   }
 }
@@ -80,44 +137,210 @@ class AiExtractedInverter {
   final String modelName;
   final double nominalPowerKw;
   final double? maxInputPowerKw;
-  final int? mpptCount;
-  final double? maxInputVoltage;
   final double? maxEfficiency;
+  final double? euroEfficiency;
+  final int? mpptCount;
+  final int? totalDcInputs;
+  final double? maxInputVoltage;
+  final double? nominalVoltageDc;
+  final double? startVoltage;
+  final double? minMpptVoltage;
+  final double? maxMpptVoltage;
+  final double? maxInputCurrentPerMppt;
+  final List<double>? mpptInputCurrentsA;
+  final List<double>? mpptShortCircuitCurrentsA;
+  final double? maxShortCircuitCurrent;
   final double? maxOutputCurrent;
-  final String inverterType; // string, micro, central
-  final String gridConnection; // monophasic, triphasic
+  final double? nominalVoltageAc;
+  final String inverterType;
+  final String gridConnection;
   final bool isHybrid;
+  final String? dimensions;
   final double? weight;
+  final double? minOperatingTemp;
+  final double? maxOperatingTemp;
+  final String? protectionDegree;
+  final int? warrantyYears;
 
-  AiExtractedInverter({
+  const AiExtractedInverter({
     required this.manufacturer,
     required this.modelName,
     required this.nominalPowerKw,
     this.maxInputPowerKw,
-    this.mpptCount,
-    this.maxInputVoltage,
     this.maxEfficiency,
+    this.euroEfficiency,
+    this.mpptCount,
+    this.totalDcInputs,
+    this.maxInputVoltage,
+    this.nominalVoltageDc,
+    this.startVoltage,
+    this.minMpptVoltage,
+    this.maxMpptVoltage,
+    this.maxInputCurrentPerMppt,
+    this.mpptInputCurrentsA,
+    this.mpptShortCircuitCurrentsA,
+    this.maxShortCircuitCurrent,
     this.maxOutputCurrent,
+    this.nominalVoltageAc,
     required this.inverterType,
     required this.gridConnection,
     required this.isHybrid,
+    this.dimensions,
     this.weight,
+    this.minOperatingTemp,
+    this.maxOperatingTemp,
+    this.protectionDegree,
+    this.warrantyYears,
   });
 
-  factory AiExtractedInverter.fromJson(Map<String, dynamic> json) {
+  bool get hasAsymmetricMpptCurrents =>
+      mpptInputCurrentsA != null && mpptInputCurrentsA!.length > 1 &&
+      mpptInputCurrentsA!.any((item) => item != mpptInputCurrentsA!.first);
+
+  int get missingEssentialFields {
+    final values = <num?>[
+      nominalPowerKw, maxInputPowerKw, mpptCount, maxInputVoltage,
+      minMpptVoltage, maxMpptVoltage, maxInputCurrentPerMppt,
+    ];
+    return values.where((v) => v == null || !v.isFinite || v <= 0).length;
+  }
+
+  /// Completa somente lacunas do mesmo fabricante+modelo.
+  AiExtractedInverter fillMissing(AiExtractedInverter newer) {
+    if (manufacturer.trim().toLowerCase() !=
+            newer.manufacturer.trim().toLowerCase() ||
+        modelName.trim().toLowerCase() !=
+            newer.modelName.trim().toLowerCase()) {
+      return this;
+    }
+
+    double p(double old, double candidate) => old > 0 ? old : candidate;
+    double? n(double? old, double? candidate) =>
+        old != null && old > 0 ? old : candidate;
+
+    int? resolvedMpptCount() {
+      bool matches(int count) {
+        final lists = <List<double>?>[
+          mpptInputCurrentsA ?? newer.mpptInputCurrentsA,
+          mpptShortCircuitCurrentsA ?? newer.mpptShortCircuitCurrentsA,
+        ];
+        return lists.every((list) => list == null || list.length == count);
+      }
+      final prior = mpptCount;
+      final candidate = newer.mpptCount;
+      if (prior != null && prior > 0 && matches(prior)) return prior;
+      if (candidate != null && candidate > 0 && matches(candidate)) {
+        return candidate;
+      }
+      return prior ?? candidate;
+    }
+
     return AiExtractedInverter(
-      manufacturer: json['manufacturer'] ?? '',
-      modelName: json['modelName'] ?? '',
-      nominalPowerKw: (json['nominalPowerKw'] ?? 0).toDouble(),
-      maxInputPowerKw: (json['maxInputPowerKw'])?.toDouble(),
-      mpptCount: (json['mpptCount'])?.toInt(),
-      maxInputVoltage: (json['maxInputVoltage'])?.toDouble(),
-      maxEfficiency: (json['maxEfficiency'])?.toDouble(),
-      maxOutputCurrent: (json['maxOutputCurrent'])?.toDouble(),
-      inverterType: json['inverterType'] ?? 'string',
-      gridConnection: json['gridConnection'] ?? 'triphasic',
-      isHybrid: json['isHybrid'] ?? false,
-      weight: (json['weight'])?.toDouble(),
+      manufacturer: manufacturer,
+      modelName: modelName,
+      nominalPowerKw: p(nominalPowerKw, newer.nominalPowerKw),
+      maxInputPowerKw: n(maxInputPowerKw, newer.maxInputPowerKw),
+      maxEfficiency: n(maxEfficiency, newer.maxEfficiency),
+      euroEfficiency: n(euroEfficiency, newer.euroEfficiency),
+      mpptCount: resolvedMpptCount(),
+      totalDcInputs: totalDcInputs ?? newer.totalDcInputs,
+      maxInputVoltage: n(maxInputVoltage, newer.maxInputVoltage),
+      nominalVoltageDc: n(nominalVoltageDc, newer.nominalVoltageDc),
+      startVoltage: n(startVoltage, newer.startVoltage),
+      minMpptVoltage: n(minMpptVoltage, newer.minMpptVoltage),
+      maxMpptVoltage: n(maxMpptVoltage, newer.maxMpptVoltage),
+      maxInputCurrentPerMppt: newer.mpptInputCurrentsA == null
+          ? n(maxInputCurrentPerMppt, newer.maxInputCurrentPerMppt)
+          : AiNumericValueParser.minCurrent([
+              if (maxInputCurrentPerMppt != null &&
+                  maxInputCurrentPerMppt! > 0)
+                maxInputCurrentPerMppt!,
+              ...newer.mpptInputCurrentsA!,
+            ]),
+      maxShortCircuitCurrent: newer.mpptShortCircuitCurrentsA == null
+          ? n(maxShortCircuitCurrent, newer.maxShortCircuitCurrent)
+          : AiNumericValueParser.minCurrent([
+              if (maxShortCircuitCurrent != null &&
+                  maxShortCircuitCurrent! > 0)
+                maxShortCircuitCurrent!,
+              ...newer.mpptShortCircuitCurrentsA!,
+            ]),
+      mpptInputCurrentsA: mpptInputCurrentsA ?? newer.mpptInputCurrentsA,
+      mpptShortCircuitCurrentsA:
+          mpptShortCircuitCurrentsA ?? newer.mpptShortCircuitCurrentsA,
+      maxOutputCurrent: n(maxOutputCurrent, newer.maxOutputCurrent),
+      nominalVoltageAc: n(nominalVoltageAc, newer.nominalVoltageAc),
+      inverterType: inverterType.isNotEmpty ? inverterType : newer.inverterType,
+      gridConnection: gridConnection.isNotEmpty ?
+          gridConnection : newer.gridConnection,
+      isHybrid: isHybrid || newer.isHybrid,
+      dimensions: dimensions?.isNotEmpty == true ? dimensions : newer.dimensions,
+      weight: weight ?? newer.weight,
+      minOperatingTemp: minOperatingTemp ?? newer.minOperatingTemp,
+      maxOperatingTemp: maxOperatingTemp ?? newer.maxOperatingTemp,
+      protectionDegree: protectionDegree?.isNotEmpty == true ?
+          protectionDegree : newer.protectionDegree,
+      warrantyYears: warrantyYears ?? newer.warrantyYears,
+    );
+  }
+
+  factory AiExtractedInverter.fromJson(Map<String, dynamic> json) {
+    final rawRange = json['mpptVoltageRange'] ?? json['mpptRange'];
+    final range = AiNumericValueParser.mpptRange(rawRange);
+    final currents = AiNumericValueParser.currentList(
+      json['mpptInputCurrentsA'] ?? json['maxInputCurrentPerMppt'],
+    );
+    final shortCircuits = AiNumericValueParser.currentList(
+      json['mpptShortCircuitCurrentsA'] ?? json['maxShortCircuitCurrent'],
+    );
+    return AiExtractedInverter(
+      manufacturer: _string(json['manufacturer']),
+      modelName: _string(json['modelName']),
+      nominalPowerKw: AiNumericValueParser.powerKw(
+        json['nominalPowerKw'] ?? json['nominalAcPowerKw'] ??
+        json['nominalAcPowerW'] ?? json['nominalPowerW'],
+        rawIsWatts: json['nominalPowerKw'] == null &&
+            json['nominalAcPowerKw'] == null,
+      ) ?? 0,
+      maxInputPowerKw: AiNumericValueParser.powerKw(
+        json['maxInputPowerKw'] ?? json['maxInputPowerWp'] ??
+            json['maxRecommendedPvPowerWp'],
+        rawIsWatts: json['maxInputPowerKw'] == null,
+      ),
+      maxEfficiency: _number(json['maxEfficiency'] ?? json['maxEfficiencyPercent']),
+      euroEfficiency: _number(json['euroEfficiency'] ?? json['europeanEfficiency']),
+      mpptCount: AiNumericValueParser.mpptCount(json['mpptCount'] ?? json['mpptTrackerCount']),
+      totalDcInputs: _integer(json['totalDcInputs'] ?? json['numberOfDcInputs'] ??
+          json['numberOfInputs']),
+      maxInputVoltage: _number(json['maxInputVoltage'] ?? json['maxDcVoltage']),
+      nominalVoltageDc: _number(json['nominalVoltageDc']) ??
+          AiNumericValueParser.nominalFromMpptRange(rawRange),
+      startVoltage: _number(json['startVoltage']),
+      minMpptVoltage: _number(json['minMpptVoltage']) ?? range?.first,
+      maxMpptVoltage: _number(json['maxMpptVoltage']) ?? range?.last,
+      maxInputCurrentPerMppt:
+          AiNumericValueParser.minCurrent(currents) ??
+          _number(json['maxInputCurrentPerMppt']),
+      mpptInputCurrentsA: currents,
+      mpptShortCircuitCurrentsA: shortCircuits,
+      maxShortCircuitCurrent:
+          AiNumericValueParser.minCurrent(shortCircuits) ??
+          _number(json['maxShortCircuitCurrent']),
+      maxOutputCurrent: _number(json['maxOutputCurrent'] ?? json['maxAcOutputCurrent']),
+      nominalVoltageAc: _number(json['nominalVoltageAc']),
+      inverterType: _string(json['inverterType']),
+      gridConnection: _string(json['gridConnection']),
+      isHybrid: _boolean(json['isHybrid']) ?? false,
+      dimensions: _string(json['dimensions']).isEmpty
+          ? null
+          : _string(json['dimensions']),
+      weight: _number(json['weight']),
+      minOperatingTemp: _number(json['minOperatingTemp']),
+      maxOperatingTemp: _number(json['maxOperatingTemp']),
+      protectionDegree: _string(json['protectionDegree']).isEmpty
+          ? null
+          : _string(json['protectionDegree']),
+      warrantyYears: _integer(json['warrantyYears']),
     );
   }
 }

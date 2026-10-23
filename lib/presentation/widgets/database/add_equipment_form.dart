@@ -3,16 +3,31 @@ import 'package:flutter/material.dart';
 import 'package:isar/isar.dart';
 
 import '../../../core/injection/injection.dart';
-import '../../../core/services/ia_service.dart';
+import '../../../core/services/openrouter_datasheet_service.dart';
+import '../../../data/repositories/equipment_catalog.dart';
+import '../../../domain/services/equipment_input_validator.dart';
 import '../../../data/models/ai_extraction_result_model.dart';
+import '../../../data/models/ai_equipment_refinement.dart';
+import '../../../data/models/ai_datasheet_semantic_auditor.dart';
+import '../../../data/models/ai_equipment_mapper.dart';
 import '../../../domain/entities/inverter.dart';
+import '../../../domain/entities/inverter_mppt_configuration.dart';
 import '../../../domain/entities/pv_module.dart';
 import '../../../domain/enums/cell_technology.dart';
 import '../../../domain/enums/grid_connection.dart';
 import '../../../domain/enums/inverter_type.dart';
 
 class AddEquipmentForm extends StatefulWidget {
-  const AddEquipmentForm({super.key});
+  final String initialType;
+  final PvModule? moduleToEdit;
+  final Inverter? inverterToEdit;
+
+  const AddEquipmentForm({
+    super.key,
+    this.initialType = 'modulo',
+    this.moduleToEdit,
+    this.inverterToEdit,
+  }) : assert(moduleToEdit == null || inverterToEdit == null);
 
   @override
   State<AddEquipmentForm> createState() => _AddEquipmentFormState();
@@ -20,6 +35,8 @@ class AddEquipmentForm extends StatefulWidget {
 
 class _AddEquipmentFormState extends State<AddEquipmentForm> {
   String type = 'modulo';
+  bool get _editing => widget.moduleToEdit != null ||
+      widget.inverterToEdit != null;
   final _formKey = GlobalKey<FormState>();
 
   final Map<String, TextEditingController> _ctrl = {};
@@ -32,8 +49,16 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   GridConnection _invGridConn = GridConnection.triphasic;
   bool _invHybrid = false;
 
-  List<dynamic> _pendingAiModels = [];
+  final List<Object> _pendingAiModels = [];
+  final Set<String> _registeredModuleKeys = {};
+  final Set<String> _registeredInverterKeys = {};
+  Map<String, List<String>> _aiAuditWarnings = {};
+  final Set<String> _manualEditedFields = {};
   bool _isLoadingAi = false;
+  bool _isSaving = false;
+  int _totalAiModels = 0;
+  int _savedAiModels = 0;
+  final _brandFocusNode = FocusNode();
 
   // [ADICIONADO] Lista para armazenar fabricantes que já existem no banco
   List<String> _existingManufacturers = [];
@@ -41,12 +66,16 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   @override
   void initState() {
     super.initState();
+    type = widget.moduleToEdit != null ? 'modulo' :
+        widget.inverterToEdit != null ? 'inversor' : widget.initialType;
     _initControllers();
-    _loadManufacturers(); // [ADICIONADO] Carrega fabricantes ao iniciar
+    _fillExistingEquipment();
+    _loadManufacturers();
   }
 
   // [ADICIONADO] Busca fabricantes no Isar dependendo do tipo selecionado
   Future<void> _loadManufacturers() async {
+    final currentType = type;
     final isar = getIt<Isar>();
     Set<String> manufacturers = {};
 
@@ -58,6 +87,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       manufacturers = inverters.map((i) => i.manufacturer).toSet();
     }
 
+    if (!mounted || currentType != type) return;
     setState(() {
       _existingManufacturers = manufacturers.toList()..sort();
     });
@@ -70,6 +100,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       'maxSystemVoltage', 'tempCoefVoc', 'tempCoefIsc', 'tempCoefPmax',
       'minOpTempMod', 'maxOpTempMod', 'fuseCurrent', 'physWarranty', 'effWarranty', 'effLoss',
       'nomPowerKw', 'maxInPowerKw', 'maxEff', 'euroEff', 'mpptCount',
+      'totalDcInputs', 'mpptCurrents', 'mpptIscCurrents',
       'maxInVolts', 'nomVoltsDc', 'startVolts', 'minMpptVolts', 'maxMpptVolts',
       'maxInCurrPerMppt', 'maxIsc', 'maxOutCurr', 'nomVoltsAc', 'dimensions',
       'minOpTempInv', 'maxOpTempInv', 'protDegree', 'warrantyYrs'
@@ -95,8 +126,74 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     _ctrl['warrantyYrs']?.text = '10';
   }
 
+  void _fillExistingEquipment() {
+    void put(String field, Object? value) {
+      if (value != null) _ctrl[field]!.text = value.toString();
+    }
+    final module = widget.moduleToEdit;
+    if (module != null) {
+      put('brand', module.manufacturer);
+      put('model', module.modelName);
+      put('powerWp', module.powerWp);
+      put('efficiency', module.efficiency);
+      put('length', module.length);
+      put('width', module.width);
+      put('weight', module.weight);
+      put('vOc', module.vOc);
+      put('iSc', module.iSc);
+      put('vMp', module.vMp);
+      put('iMp', module.iMp);
+      put('maxSystemVoltage', module.maxSystemVoltage);
+      put('tempCoefVoc', module.tempCoefVoc);
+      put('tempCoefIsc', module.tempCoefIsc);
+      put('tempCoefPmax', module.tempCoefPmax);
+      put('minOpTempMod', module.minOperatingTemp);
+      put('maxOpTempMod', module.maxOperatingTemp);
+      put('fuseCurrent', module.fuseCurrent);
+      put('physWarranty', module.physicalWarranty);
+      put('effWarranty', module.efficiencyWarranty);
+      put('effLoss', module.efficiencyLoss);
+      _modCellTech = module.cellTechnology;
+      _modBifacial = module.isBifacial;
+      _modTier1 = module.isTier1;
+    }
+    final inverter = widget.inverterToEdit;
+    if (inverter != null) {
+      put('brand', inverter.manufacturer);
+      put('model', inverter.modelName);
+      put('nomPowerKw', inverter.nominalPowerKw);
+      put('maxInPowerKw', inverter.maxInputPowerKw);
+      put('maxEff', inverter.maxEfficiency * 100);
+      put('euroEff', inverter.euroEfficiency * 100);
+      put('mpptCount', inverter.mpptCount);
+      final config = inverter.mpptConfiguration;
+      put('totalDcInputs', config?.totalDcInputs);
+      put('mpptCurrents', config?.inputCurrentsA?.join('/'));
+      put('mpptIscCurrents', config?.shortCircuitCurrentsA?.join('/'));
+      put('maxInVolts', inverter.maxInputVoltage);
+      put('nomVoltsDc', inverter.nominalVoltageDc);
+      put('startVolts', inverter.startVoltage);
+      put('minMpptVolts', inverter.minMpptVoltage);
+      put('maxMpptVolts', inverter.maxMpptVoltage);
+      put('maxInCurrPerMppt', inverter.maxInputCurrentPerMppt);
+      put('maxIsc', inverter.maxShortCircuitCurrent);
+      put('maxOutCurr', inverter.maxOutputCurrent);
+      put('nomVoltsAc', inverter.nominalVoltageAc);
+      put('dimensions', inverter.dimensions);
+      put('weight', inverter.weight);
+      put('minOpTempInv', inverter.minOperatingTemp);
+      put('maxOpTempInv', inverter.maxOperatingTemp);
+      put('protDegree', inverter.protectionDegree);
+      put('warrantyYrs', inverter.warrantyYears);
+      _invType = inverter.inverterType;
+      _invGridConn = inverter.gridConnection;
+      _invHybrid = inverter.isHybrid;
+    }
+  }
+
   @override
   void dispose() {
+    _brandFocusNode.dispose();
     for (var c in _ctrl.values) {
       c.dispose();
     }
@@ -129,12 +226,14 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
                 ],
                 selected: {type},
                 // [MODIFICADO] Chama _onTypeChanged para atualizar a lista de fabricantes ao trocar de aba
-                onSelectionChanged: isProcessingQueue ? null : (val) => _onTypeChanged(val.first),
+                onSelectionChanged: isProcessingQueue || _isSaving || _editing ?
+                    null : (val) => _onTypeChanged(val.first),
               ),
               const SizedBox(height: 20),
 
-              if (!isProcessingQueue) _buildAIActions(),
-              if (!isProcessingQueue) const Divider(height: 30),
+              if (!isProcessingQueue && !_editing) _buildAIActions(),
+              if (isProcessingQueue) _buildImportQueue(),
+              const Divider(height: 30),
 
               _buildSectionTitle("Informações Básicas"),
               
@@ -148,9 +247,14 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
 
               const SizedBox(height: 30),
               ElevatedButton(
-                onPressed: _saveAndNext,
+                onPressed: _isSaving || _isLoadingAi ? null : _saveAndNext,
                 style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(55)),
-                child: Text(isProcessingQueue ? "SALVAR E PRÓXIMO (${_pendingAiModels.length} na fila)" : "SALVAR NO BANCO"),
+                child: Text(_isSaving
+                    ? 'Salvando...'
+                    : _editing ? 'ATUALIZAR EQUIPAMENTO'
+                    : isProcessingQueue
+                        ? 'REVISAR E SALVAR (${_pendingAiModels.length} restante(s))'
+                        : 'SALVAR NO BANCO'),
               ),
               const SizedBox(height: 20),
             ],
@@ -162,68 +266,56 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
 
   // [ADICIONADO] Função para gerenciar a troca de tipo e recarregar fabricantes
   void _onTypeChanged(String newType) {
-    setState(() {
-      type = newType;
-      _loadManufacturers();
-    });
+    setState(() => type = newType);
+    _loadManufacturers();
   }
 
-  // [ADICIONADO] Widget de Fabricante usando Autocomplete
+  // RawAutocomplete utiliza diretamente o controller do formulário.
+  // Isso evita divergência ao preencher o fabricante via IA ou selecionar
+  // um fabricante já cadastrado.
   Widget _buildManufacturerField() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: LayoutBuilder(
-        builder: (context, constraints) => Autocomplete<String>(
-          optionsBuilder: (TextEditingValue textEditingValue) {
-            if (textEditingValue.text.isEmpty) {
+        builder: (context, constraints) => RawAutocomplete<String>(
+          textEditingController: _ctrl['brand'],
+          focusNode: _brandFocusNode,
+          optionsBuilder: (value) {
+            if (value.text.trim().isEmpty) {
               return const Iterable<String>.empty();
             }
-            return _existingManufacturers.where((String option) {
-              return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
-            });
+            return _existingManufacturers.where((manufacturer) =>
+                manufacturer.toLowerCase().contains(value.text.toLowerCase()));
           },
-          onSelected: (String selection) {
-            _ctrl['brand']?.text = selection;
-          },
-          fieldViewBuilder: (context, textController, focusNode, onFieldSubmitted) {
-            // Sincroniza o controller interno do Autocomplete com o nosso _ctrl['brand']
-            // Isso é vital para quando a IA preenche o campo
-            if (_ctrl['brand']!.text.isNotEmpty && textController.text != _ctrl['brand']!.text) {
-              textController.text = _ctrl['brand']!.text;
-            }
-
-            return TextFormField(
-              controller: textController,
-              focusNode: focusNode,
-              decoration: _inputDecoration("Fabricante"),
-              onChanged: (value) {
-                _ctrl['brand']?.text = value; // Garante que o valor digitado vá para o mapa de controllers
-              },
-            );
-          },
-          optionsViewBuilder: (context, onSelected, options) {
-            return Align(
-              alignment: Alignment.topLeft,
-              child: Material(
-                elevation: 4.0,
-                child: SizedBox(
-                  width: constraints.maxWidth,
-                  child: ListView.builder(
-                    padding: EdgeInsets.zero,
-                    shrinkWrap: true,
-                    itemCount: options.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final String option = options.elementAt(index);
-                      return ListTile(
-                        title: Text(option),
-                        onTap: () => onSelected(option),
-                      );
-                    },
-                  ),
+          onSelected: (value) => _ctrl['brand']!.text = value,
+          fieldViewBuilder: (context, textController, focusNode, onSubmit) =>
+              TextFormField(
+            controller: textController,
+            focusNode: focusNode,
+            decoration: _inputDecoration('Fabricante *'),
+            validator: (v) => v == null || v.trim().isEmpty
+                ? 'Informe o fabricante.'
+                : null,
+          ),
+          optionsViewBuilder: (context, onSelected, options) => Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              child: SizedBox(
+                width: constraints.maxWidth,
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: options
+                      .map((option) => ListTile(
+                            title: Text(option),
+                            onTap: () => onSelected(option),
+                          ))
+                      .toList(),
                 ),
               ),
-            );
-          },
+            ),
+          ),
         ),
       ),
     );
@@ -234,17 +326,39 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          isProcessingQueue ? "Revisando Fila da IA" : "Novo Equipamento",
+          isProcessingQueue ? 'Revisando Fila da IA' :
+              _editing ? 'Editar Equipamento' : 'Novo Equipamento',
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         if (isProcessingQueue)
           IconButton(
             icon: const Icon(Icons.close, color: Colors.red),
-            onPressed: () => setState(() => _pendingAiModels.clear()),
+            onPressed: _isSaving ? null : () => setState(() {
+              _pendingAiModels.clear();
+              _totalAiModels = 0;
+              _savedAiModels = 0;
+              _clearManualForm();
+            }),
             tooltip: "Cancelar Fila",
           )
       ],
     );
+  }
+
+  void _clearManualForm() {
+    _manualEditedFields.clear();
+    _aiAuditWarnings = {};
+    for (final controller in _ctrl.values) {
+      controller.clear();
+    }
+    _setDefaults();
+    type = widget.initialType;
+    _modCellTech = CellTechnology.topcon;
+    _modBifacial = false;
+    _modTier1 = false;
+    _invType = InverterType.string;
+    _invGridConn = GridConnection.triphasic;
+    _invHybrid = false;
   }
 
   Widget _buildAIActions() {
@@ -253,13 +367,271 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         : ElevatedButton.icon(
             onPressed: _readDatasheetWithAI,
             icon: const Icon(Icons.document_scanner),
-            label: const Text("Ler Datasheet com Gemini (IA)"),
+            label: const Text("Importar datasheet PDF com IA"),
             style: ElevatedButton.styleFrom(
               foregroundColor: Colors.white,
               backgroundColor: Colors.purple.shade600,
               minimumSize: const Size.fromHeight(45),
             ),
           );
+  }
+
+  String _queueKey(Object item) {
+    if (item is AiExtractedModule) {
+      return EquipmentCatalog.key(item.manufacturer, item.modelName);
+    }
+    final inv = item as AiExtractedInverter;
+    return EquipmentCatalog.key(inv.manufacturer, inv.modelName);
+  }
+
+  bool _isRegistered(Object item) {
+    final key = _queueKey(item);
+    return item is AiExtractedModule
+        ? _registeredModuleKeys.contains(key)
+        : _registeredInverterKeys.contains(key);
+  }
+
+  String _typedQueueKey(Object item) =>
+      (item is AiExtractedModule ? 'module:' : 'inverter:') + _queueKey(item);
+
+  Widget _buildImportQueue() {
+    final currentNumber = _totalAiModels - _pendingAiModels.length + 1;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Revisando $currentNumber de $_totalAiModels: '
+          '${_pendingAiModels.length} modelo(s) pendente(s)',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Confira cada valor extraído. Campos não identificados ficam '
+          'em branco; complete os obrigatórios antes de salvar. '
+          'O PDF foi enviado ao OpenRouter e ao provedor do modelo.',
+          style: TextStyle(fontSize: 12),
+        ),
+        if (_pendingAiModels.first is AiExtractedInverter &&
+            (_pendingAiModels.first as AiExtractedInverter)
+                    .hasAsymmetricMpptCurrents)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Atenção: correntes diferentes por MPPT: '
+              '${(_pendingAiModels.first as AiExtractedInverter).mpptInputCurrentsA!.join(' / ')} A. '
+              'O catálogo preserva os limites individuais; os campos '
+              'escalares usam o MENOR limite somente para cálculos legados.',
+              style: const TextStyle(color: Colors.deepOrange),
+            ),
+          ),
+        if (_aiAuditWarnings.containsKey(
+            AiDatasheetSemanticAuditor.key(_pendingAiModels.first)))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Auditoria do datasheet:',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                for (final warning in _aiAuditWarnings[
+                    AiDatasheetSemanticAuditor.key(_pendingAiModels.first)]!)
+                  Text('• $warning',
+                      style: const TextStyle(color: Colors.deepOrange)),
+              ],
+            ),
+          ),
+        if (_manualEditedFields.isNotEmpty)
+          Text('REVISADO MANUALMENTE: ${_manualEditedFields.join(', ')}',
+              style: const TextStyle(color: Colors.green)),
+        const Text('Estados: EXTRAÍDO DA FONTE = valor conferido; '
+            'NÃO CONFIRMADO = revisar no PDF; INCONSISTENTE = divergência; '
+            'REVISADO MANUALMENTE = campo alterado no formulário.',
+            style: TextStyle(fontSize: 11)),
+        if (_isRegistered(_pendingAiModels.first))
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              'JÁ CADASTRADO: fabricante e modelo encontrados no banco. '
+              'O PDF foi lido normalmente. Pule este registro para não '
+              'substituir os dados existentes.',
+              style: TextStyle(color: Colors.deepOrange),
+            ),
+          ),
+        const SizedBox(height: 8),
+        Container(
+          constraints: const BoxConstraints(maxHeight: 125),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _pendingAiModels.length,
+            itemBuilder: (context, index) {
+              final item = _pendingAiModels[index];
+              final manufacturer = item is AiExtractedModule
+                  ? item.manufacturer
+                  : (item as AiExtractedInverter).manufacturer;
+              final modelName = item is AiExtractedModule
+                  ? item.modelName
+                  : (item as AiExtractedInverter).modelName;
+              final registered = _isRegistered(item);
+              final duplicatedInPdf = _pendingAiModels
+                  .take(index)
+                  .any((previous) => _typedQueueKey(previous) ==
+                      _typedQueueKey(item));
+              final gaps = item is AiExtractedModule
+                  ? AiEquipmentRefinement.missingModuleFields(item).length
+                  : AiEquipmentRefinement.missingInverterFields(
+                      item as AiExtractedInverter).length;
+              final suffix = registered
+                  ? ' — JÁ CADASTRADO'
+                  : duplicatedInPdf ? ' — REPETIDO NO PDF' : '';
+              final pending = gaps == 0
+                  ? '' : ' — $gaps campo(s) não confirmado(s)';
+              return Text(
+                '${index == 0 ? '▶ ' : '• '}$manufacturer — $modelName '
+                '(${item is AiExtractedModule ? 'Módulo' : 'Inversor'})$suffix$pending',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: (registered || duplicatedInPdf)
+                    ? const TextStyle(color: Colors.deepOrange)
+                    : null,
+              );
+            },
+          ),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: _isSaving ? null : _importAllAiModels,
+          icon: const Icon(Icons.library_add_check),
+          label: const Text('IMPORTAR TODOS (SE COMPLETOS)'),
+        ),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: _isSaving ? null : _skipCurrentAiModel,
+          icon: const Icon(Icons.skip_next),
+          label: const Text('Pular este modelo sem salvar'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _importAllAiModels() async {
+    if (_isSaving || _pendingAiModels.isEmpty) return;
+    final modules = <PvModule>[];
+    final inverters = <Inverter>[];
+    final incomplete = <String>[];
+    final seenInPdf = <String>{};
+    var duplicates = 0;
+    for (final item in _pendingAiModels) {
+      if (_isRegistered(item) ||
+          !seenInPdf.add(_typedQueueKey(item))) {
+        duplicates++;
+        continue;
+      }
+      final auditIssues = _aiAuditWarnings[
+          AiDatasheetSemanticAuditor.key(item)] ?? const <String>[];
+      if (auditIssues.isNotEmpty) {
+        final label = item is AiExtractedModule
+            ? item.modelName : (item as AiExtractedInverter).modelName;
+        incomplete.add('$label: revisão documental obrigatória '
+            '(${auditIssues.length} aviso(s))');
+        continue;
+      }
+      if (item is AiExtractedModule) {
+        final issues = AiEquipmentMapper.moduleProblems(item);
+        if (issues.isNotEmpty) {
+          incomplete.add('${item.modelName}: ${issues.join(', ')}');
+        } else {
+          modules.add(AiEquipmentMapper.module(item));
+        }
+      } else if (item is AiExtractedInverter) {
+        final issues = AiEquipmentMapper.inverterProblems(item);
+        if (issues.isNotEmpty) {
+          incomplete.add('${item.modelName}: ${issues.join(', ')}');
+        } else {
+          inverters.add(AiEquipmentMapper.inverter(item));
+        }
+      }
+    }
+
+    if (modules.isEmpty && inverters.isEmpty && incomplete.isEmpty) {
+      _showError('Nenhum modelo novo para importar: $duplicates já existe(m) '
+          'ou está(ão) repetido(s) no PDF.');
+      return;
+    }
+    if (incomplete.isNotEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Revise os modelos incompletos'),
+          content: SingleChildScrollView(
+            child: Text('A importação em lote não salva cadastros incompletos. '
+                'Revise estes modelos individualmente:\n\n'
+                '${incomplete.take(15).join('\n')}'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirmar importação em lote'),
+        content: Text('Adicionar ${modules.length} módulo(s) e '
+            '${inverters.length} inversor(es)? '
+            'Os dados serão usados como a IA os extraiu, sem aplicar '
+            'eventuais edições ainda não salvas no formulário. '
+            'Confirme as especificações do PDF antes de prosseguir. '
+            '$duplicates duplicado(s) identificado(s) e ignorado(s).'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Importar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _isSaving = true);
+    try {
+      final report = await EquipmentCatalog(getIt<Isar>()).importMany(
+        modules: modules,
+        inverters: inverters,
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${report.totalAdded} equipamento(s) incluído(s); '
+            '${report.duplicatesSkipped} duplicado(s) ignorado(s).'),
+      ));
+    } catch (error) {
+      _showError('Falha na importação em lote: $error');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  void _skipCurrentAiModel() {
+    if (_pendingAiModels.isEmpty) return;
+    setState(() {
+      _pendingAiModels.removeAt(0);
+      if (_pendingAiModels.isNotEmpty) {
+        _loadCurrentAiModel();
+      } else {
+        _totalAiModels = 0;
+        _savedAiModels = 0;
+        _clearManualForm();
+      }
+    });
+    _loadManufacturers();
   }
 
   List<Widget> _buildModuleFields() {
@@ -273,7 +645,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       ),
       const SizedBox(height: 5),
       DropdownButtonFormField<CellTechnology>(
-        initialValue: _modCellTech, // [MODIFICADO] initialValue para value para refletir mudanças da IA
+        key: ValueKey('cell_${_modCellTech.name}_${_pendingAiModels.length}'),
+        initialValue: _modCellTech,
         decoration: _inputDecoration("Tecnologia da Célula"),
         items: CellTechnology.values.map((e) => DropdownMenuItem(value: e, child: Text(e.name.toUpperCase()))).toList(),
         onChanged: (val) => setState(() => _modCellTech = val!),
@@ -318,6 +691,23 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
           Expanded(child: _buildTextField("Isc", 'tempCoefIsc')),
         ],
       ),
+      _buildSectionTitle('Limites e Garantias'),
+      Row(children: [
+        Expanded(child: _buildTextField('Tensão Máx do Sistema (V)', 'maxSystemVoltage')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildTextField('Fusível Máx (A)', 'fuseCurrent')),
+      ]),
+      Row(children: [
+        Expanded(child: _buildTextField('Temp. Mín (°C)', 'minOpTempMod')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildTextField('Temp. Máx (°C)', 'maxOpTempMod')),
+      ]),
+      Row(children: [
+        Expanded(child: _buildTextField('Garantia Física (anos)', 'physWarranty')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildTextField('Garantia Eficiência (anos)', 'effWarranty')),
+      ]),
+      _buildTextField('Perda de Eficiência Final (%)', 'effLoss'),
     ];
   }
 
@@ -326,7 +716,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       const SizedBox(height: 10),
 
       DropdownButtonFormField<InverterType>(
-        initialValue: _invType, // [MODIFICADO]
+        key: ValueKey('inv_${_invType.name}_${_pendingAiModels.length}'),
+        initialValue: _invType,
         decoration: _inputDecoration("Tipo de Inversor"),
         items: InverterType.values.map((e) => DropdownMenuItem(value: e, child: Text(e.name.toUpperCase()))).toList(),
         onChanged: (val) => setState(() => _invType = val!),
@@ -335,7 +726,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       const SizedBox(height: 20),
 
       DropdownButtonFormField<GridConnection>(
-        initialValue: _invGridConn, // [MODIFICADO]
+        key: ValueKey('grid_${_invGridConn.name}_${_pendingAiModels.length}'),
+        initialValue: _invGridConn,
         decoration: _inputDecoration("Conexão com a Rede"),
         items: GridConnection.values.map((e) => DropdownMenuItem(value: e, child: Text(e.name.toUpperCase()))).toList(),
         onChanged: (val) => setState(() => _invGridConn = val!),
@@ -368,7 +760,23 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         children: [
           Expanded(child: _buildTextField("Qtd MPPTs", 'mpptCount')),
           const SizedBox(width: 10),
+          Expanded(child: _buildTextField("Entradas CC totais", 'totalDcInputs')),
+          const SizedBox(width: 10),
           Expanded(child: _buildTextField("Tensão Máx (V)", 'maxInVolts')),
+        ],
+      ),
+      Row(
+        children: [
+          Expanded(child: _buildTextField("Tensão Início (V)", 'startVolts')),
+          const SizedBox(width: 10),
+          Expanded(child: _buildTextField("Tensão Nominal CC (V)", 'nomVoltsDc')),
+        ],
+      ),
+      Row(
+        children: [
+          Expanded(child: _buildTextField("MPPT Mín (V)", 'minMpptVolts')),
+          const SizedBox(width: 10),
+          Expanded(child: _buildTextField("MPPT Máx (V)", 'maxMpptVolts')),
         ],
       ),
       Row(
@@ -379,6 +787,12 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         ],
       ),
 
+      _buildTextField('Correntes Impp por MPPT (A, ex.: 32/16)', 'mpptCurrents'),
+      _buildTextField('Correntes Isc por MPPT (A, ex.: 40/20)', 'mpptIscCurrents'),
+      const Text(
+        'As correntes por MPPT são preservadas. Os campos escalares acima '
+        'representam os menores limites para cálculos legados.',
+      ),
       _buildSectionTitle("Saída AC"),
       Row(
         children: [
@@ -387,6 +801,19 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
           Expanded(child: _buildTextField("Corrente Máx (A)", 'maxOutCurr')),
         ],
       ),
+      _buildSectionTitle('Físico, Ambiental e Garantia'),
+      _buildTextField('Dimensões (mm)', 'dimensions'),
+      Row(children: [
+        Expanded(child: _buildTextField('Peso (kg)', 'weight')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildTextField('Grau de Proteção', 'protDegree')),
+      ]),
+      Row(children: [
+        Expanded(child: _buildTextField('Temp. Mín (°C)', 'minOpTempInv')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildTextField('Temp. Máx (°C)', 'maxOpTempInv')),
+      ]),
+      _buildTextField('Garantia (anos)', 'warrantyYrs'),
     ];
   }
 
@@ -401,12 +828,27 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   }
 
   Widget _buildTextField(String label, String ctrlKey) {
+    final required = EquipmentInputValidator.isRequired(
+      ctrlKey, isModule: type == 'modulo',
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
         controller: _ctrl[ctrlKey],
-        decoration: _inputDecoration(label),
-        keyboardType: TextInputType.text,
+        decoration: _inputDecoration(required ? '$label *' : label),
+        keyboardType: EquipmentInputValidator.isTextField(ctrlKey)
+            ? TextInputType.text
+            : const TextInputType.numberWithOptions(decimal: true, signed: true),
+        onChanged: (_) {
+          if (_pendingAiModels.isNotEmpty) {
+            setState(() => _manualEditedFields.add(ctrlKey));
+          }
+        },
+        validator: (value) => EquipmentInputValidator.validate(
+          key: ctrlKey,
+          value: value,
+          isModule: type == 'modulo',
+        ),
       ),
     );
   }
@@ -420,190 +862,386 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   }
 
   Future<void> _readDatasheetWithAI() async {
-    // 1. Abre o seletor de arquivos
-    final result = await FilePicker.platform.pickFiles(
+    if (_isLoadingAi || _isSaving) return;
+    final selection = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf'],
+      allowedExtensions: const ['pdf'],
       allowMultiple: false,
-      withData: true, // IMPORTANTE: Para Web ou se o path falhar
+      withData: false,
     );
-
-    if (result == null || result.files.isEmpty) return;
-
-    setState(() => _isLoadingAi = true);
-
-    try {
-      final String? filePath = result.files.single.path;
-      
-      if (filePath == null) {
-        throw Exception("Não foi possível obter o caminho do arquivo.");
-      }
-
-      final iaService = getIt<IAService>();
-      
-      // [CORREÇÃO] Certifique-se que o nome do método é o mesmo do seu IAService
-      // No seu arquivo está 'analyzeDatasheet'
-      final extraction = await iaService.analyzeDatasheet(filePath);
-
-      if (extraction == null) {
-        throw Exception("A IA não retornou dados válidos.");
-      }
-
-      setState(() {
-        // Como o seu analyzeDatasheet retorna Map<String, dynamic>, 
-        // vamos converter para a fila ou preencher direto
-        _pendingAiModels = [extraction]; 
-        
-        // Se a IA detectou que é um inversor (ex: campo power em kW), 
-        // você pode precisar ajustar a lógica de 'type' aqui
-        _loadCurrentAiModel();
-        _loadManufacturers(); 
-      });
-
-    } catch (e) {
-      debugPrint("Erro detalhado: $e");
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erro: $e"), backgroundColor: Colors.red),
+    if (selection == null || selection.files.isEmpty || !mounted) return;
+    final file = selection.files.single;
+    if (file.size > 10 * 1024 * 1024) {
+      _showError('O arquivo PDF deve ter no máximo 10 MB.');
+      return;
+    }
+    if (file.path == null) {
+      _showError('Não foi possível acessar o PDF selecionado.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('PDF grande'),
+          content: Text('O documento tem '
+              '${(file.size / (1024 * 1024)).toStringAsFixed(1)} MB. '
+              'Em Base64, o envio fica cerca de 33% maior e pode ultrapassar '
+              'os limites dos modelos gratuitos. É recomendado comprimir '
+              'imagens do PDF SEM prejudicar as tabelas técnicas. '
+              'Deseja continuar com o arquivo original?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Continuar'),
+            ),
+          ],
+        ),
       );
+      if (proceed != true || !mounted) return;
+    }
+    setState(() => _isLoadingAi = true);
+    try {
+      // Somente o arquivo escolhido é enviado ao OpenRouter.
+      // Um refinamento opcional usa o texto retornado, sem reenviar o PDF.
+      final result = await OpenRouterDatasheetService()
+          .extractEquipmentData(file.path!);
+      if (!mounted) return;
+      final isar = getIt<Isar>();
+      final modulesAlready = await isar.pvModules.where().findAll();
+      final invertersAlready = await isar.inverters.where().findAll();
+      if (!mounted) return;
+      setState(() {
+        _aiAuditWarnings = result.auditWarnings;
+        _manualEditedFields.clear();
+        _registeredModuleKeys
+          ..clear()
+          ..addAll(modulesAlready.map((m) =>
+              EquipmentCatalog.key(m.manufacturer, m.modelName)));
+        _registeredInverterKeys
+          ..clear()
+          ..addAll(invertersAlready.map((i) =>
+              EquipmentCatalog.key(i.manufacturer, i.modelName)));
+        _pendingAiModels
+          ..clear()
+          ..addAll(result.modules)
+          ..addAll(result.inverters);
+        _totalAiModels = _pendingAiModels.length;
+        _savedAiModels = 0;
+        _loadCurrentAiModel();
+      });
+      _loadManufacturers();
+      final missingFields = result.modules.fold<int>(
+          0, (sum, m) =>
+              sum + AiEquipmentRefinement.missingModuleFields(m).length) +
+          result.inverters.fold<int>(
+              0, (sum, i) =>
+                  sum + AiEquipmentRefinement.missingInverterFields(i).length);
+      final invalid = result.inverters.where(
+          (i) => AiEquipmentMapper.inverterProblems(i).isNotEmpty).length;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${_pendingAiModels.length} modelo(s) identificado(s), '
+            '$missingFields campo(s) não confirmado(s) após refinamento; '
+            '$invalid inversor(es) exigem revisão.'),
+      ));
+    } catch (error) {
+      if (!mounted) return;
+      _showError('Falha na leitura do PDF: $error');
     } finally {
       if (mounted) setState(() => _isLoadingAi = false);
     }
   }
-  
+
   void _loadCurrentAiModel() {
     if (_pendingAiModels.isEmpty) return;
-    
+    _manualEditedFields.clear();
     final data = _pendingAiModels.first;
-    
-    for (var c in _ctrl.values) { c.clear(); }
-    _setDefaults();
+
+    for (final controller in _ctrl.values) {
+      controller.clear();
+    }
+    void put(String field, Object? value) {
+      if (value != null) _ctrl[field]!.text = value.toString();
+    }
 
     if (data is AiExtractedModule) {
-      _ctrl['brand']?.text = data.manufacturer;
-      _ctrl['model']?.text = data.modelName;
-      _ctrl['powerWp']?.text = data.powerWp.toString();
-      _ctrl['efficiency']?.text = data.efficiency.toString();
-      _ctrl['vOc']?.text = data.vOc.toString();
-      _ctrl['iSc']?.text = data.iSc.toString();
-      _ctrl['vMp']?.text = data.vMp.toString();
-      _ctrl['iMp']?.text = data.iMp.toString();
-      _ctrl['length']?.text = data.length?.toString() ?? '';
-      _ctrl['width']?.text = data.width?.toString() ?? '';
-      _ctrl['weight']?.text = data.weight?.toString() ?? '';
-      
+      type = 'modulo';
+      put('brand', data.manufacturer);
+      put('model', data.modelName);
+      put('powerWp', data.powerWp == 0 ? null : data.powerWp);
+      put('efficiency', data.efficiency == 0 ? null : data.efficiency);
+      put('vOc', data.vOc == 0 ? null : data.vOc);
+      put('iSc', data.iSc == 0 ? null : data.iSc);
+      put('vMp', data.vMp == 0 ? null : data.vMp);
+      put('iMp', data.iMp == 0 ? null : data.iMp);
+      put('length', data.length);
+      put('width', data.width);
+      put('weight', data.weight);
+      put('tempCoefPmax', data.tempCoefPmax);
+      put('tempCoefVoc', data.tempCoefVoc);
+      put('tempCoefIsc', data.tempCoefIsc);
+      put('maxSystemVoltage', data.maxSystemVoltage);
+      put('minOpTempMod', data.minOperatingTemp);
+      put('maxOpTempMod', data.maxOperatingTemp);
+      put('fuseCurrent', data.fuseCurrent);
+      put('physWarranty', data.physicalWarranty);
+      put('effWarranty', data.efficiencyWarranty);
+      put('effLoss', data.efficiencyLoss);
       _modCellTech = _parseCellTechnology(data.cellTechnology);
       _modBifacial = data.isBifacial;
-    } 
-    else if (data is AiExtractedInverter) {
-      _ctrl['brand']?.text = data.manufacturer;
-      _ctrl['model']?.text = data.modelName;
-      _ctrl['nomPowerKw']?.text = data.nominalPowerKw.toString();
-      _ctrl['maxInPowerKw']?.text = data.maxInputPowerKw?.toString() ?? '';
-      _ctrl['mpptCount']?.text = data.mpptCount?.toString() ?? '';
-      _ctrl['maxInVolts']?.text = data.maxInputVoltage?.toString() ?? '';
-      _ctrl['maxOutCurr']?.text = data.maxOutputCurrent?.toString() ?? '';
-      _ctrl['maxEff']?.text = data.maxEfficiency?.toString() ?? '';
-      _ctrl['weight']?.text = data.weight?.toString() ?? '';
-      
+      // Tier 1 é informação de classificação, não inferir se ausente.
+      _modTier1 = data.isTier1 ?? false;
+    } else if (data is AiExtractedInverter) {
+      type = 'inversor';
+      put('brand', data.manufacturer);
+      put('model', data.modelName);
+      put('nomPowerKw', data.nominalPowerKw == 0 ? null : data.nominalPowerKw);
+      put('maxInPowerKw', data.maxInputPowerKw);
+      // O cadastro usa percentuais na UI e frações no Isar.
+      put('maxEff', _asPercent(data.maxEfficiency));
+      put('euroEff', _asPercent(data.euroEfficiency));
+      put('mpptCount', data.mpptCount);
+      put('totalDcInputs', data.totalDcInputs);
+      put('mpptCurrents', data.mpptInputCurrentsA?.join('/'));
+      put('mpptIscCurrents', data.mpptShortCircuitCurrentsA?.join('/'));
+      put('maxInVolts', data.maxInputVoltage);
+      put('nomVoltsDc', data.nominalVoltageDc);
+      put('startVolts', data.startVoltage);
+      put('minMpptVolts', data.minMpptVoltage);
+      put('maxMpptVolts', data.maxMpptVoltage);
+      put('maxInCurrPerMppt', data.maxInputCurrentPerMppt);
+      put('maxIsc', data.maxShortCircuitCurrent);
+      put('maxOutCurr', data.maxOutputCurrent);
+      put('nomVoltsAc', data.nominalVoltageAc);
+      put('dimensions', data.dimensions);
+      put('weight', data.weight);
+      put('minOpTempInv', data.minOperatingTemp);
+      put('maxOpTempInv', data.maxOperatingTemp);
+      put('protDegree', data.protectionDegree);
+      put('warrantyYrs', data.warrantyYears);
       _invType = _parseInverterType(data.inverterType);
       _invGridConn = _parseGridConnection(data.gridConnection);
       _invHybrid = data.isHybrid;
     }
   }
 
-  void _saveAndNext() async {
-    if (_ctrl['brand']!.text.isEmpty || _ctrl['model']!.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Preencha Fabricante e Modelo!")));
+  double? _asPercent(double? value) {
+    if (value == null) return null;
+    return value <= 1 ? value * 100 : value;
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  Future<void> _saveAndNext() async {
+    if (_isSaving || _isLoadingAi) return;
+    if (!_formKey.currentState!.validate()) {
+      _showError('Revise os campos obrigatórios e os números informados.');
+      return;
+    }
+    if (_pendingAiModels.isNotEmpty &&
+        _isRegistered(_pendingAiModels.first)) {
+      _showError('Este fabricante e modelo já está cadastrado. '
+          'Use Pular este modelo ou edite o registro existente.');
+      return;
+    }
+    final brand = _ctrl['brand']!.text.trim();
+    final model = _ctrl['model']!.text.trim();
+    if (brand.isEmpty || model.isEmpty) {
+      _showError('Informe o fabricante e o modelo.');
       return;
     }
 
-    final isar = getIt<Isar>();
+    double number(String key) =>
+        double.tryParse(_ctrl[key]!.text.trim().replaceAll(',', '.')) ?? 0;
+    int integer(String key) =>
+        double.tryParse(_ctrl[key]!.text.trim().replaceAll(',', '.'))
+            ?.toInt() ?? 0;
 
-    double pDouble(String key) => double.tryParse(_ctrl[key]!.text.replaceAll(',', '.')) ?? 0.0;
-    int pInt(String key) => int.tryParse(_ctrl[key]!.text) ?? 0;
+    if (type == 'inversor') {
+      final minVoltage = number('minMpptVolts');
+      final maxVoltage = number('maxMpptVolts');
+      final inputVoltage = number('maxInVolts');
+      if (minVoltage > maxVoltage || maxVoltage > inputVoltage) {
+        _showError('Corrija o MPPT: mínimo ≤ máximo ≤ tensão de entrada.');
+        return;
+      }
+    }
 
+    List<double>? currents(String key) {
+      final source = _ctrl[key]!.text.trim();
+      if (source.isEmpty) return null;
+      return source.split(RegExp(r'[/;]'))
+          .map((v) => double.parse(v.trim().replaceAll(',', '.')))
+          .toList();
+    }
+    InverterMpptConfiguration? mpptConfig;
+    if (type == 'inversor') {
+      final candidate = InverterMpptConfiguration(
+        inputCurrentsA: currents('mpptCurrents'),
+        shortCircuitCurrentsA: currents('mpptIscCurrents'),
+        totalDcInputs: _ctrl['totalDcInputs']!.text.trim().isEmpty
+            ? null : integer('totalDcInputs'),
+      );
+      final problems = candidate.validate(integer('mpptCount'));
+      if (problems.isNotEmpty) {
+        _showError(problems.join('; '));
+        return;
+      }
+      if (candidate.hasDetails) mpptConfig = candidate;
+    }
+    if (_pendingAiModels.isNotEmpty) {
+      final warnings = _aiAuditWarnings[
+          AiDatasheetSemanticAuditor.key(_pendingAiModels.first)] ??
+          const <String>[];
+      if (warnings.isNotEmpty) {
+        final approved = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Confirmar revisão técnica'),
+            content: SingleChildScrollView(
+              child: Text('Existem propriedades não confirmadas ou '
+                  'corrigidas durante a auditoria. Confira com o PDF '
+                  'antes de salvar:\n\n${warnings.join('\n')}\n\n'
+                  'Deseja confirmar manualmente este cadastro?'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Continuar revisando'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Revisei e confirmo'),
+              ),
+            ],
+          ),
+        );
+        if (approved != true || !mounted) return;
+      }
+    }
+    setState(() => _isSaving = true);
     try {
-      await isar.writeTxn(() async {
-        if (type == 'modulo') {
-          final m = PvModule(
-            manufacturer: _ctrl['brand']!.text.trim(),
-            modelName: _ctrl['model']!.text.trim(),
-            powerWp: pInt('powerWp'),
-            efficiency: pDouble('efficiency'),
-            cellTechnology: _modCellTech,
-            isBifacial: _modBifacial,
-            isTier1: _modTier1,
-            length: pDouble('length'),
-            width: pDouble('width'),
-            weight: pDouble('weight'),
-            vOc: pDouble('vOc'),
-            iSc: pDouble('iSc'),
-            vMp: pDouble('vMp'),
-            iMp: pDouble('iMp'),
-            maxSystemVoltage: pDouble('maxSystemVoltage'),
-            tempCoefVoc: pDouble('tempCoefVoc'),
-            tempCoefIsc: pDouble('tempCoefIsc'),
-            tempCoefPmax: pDouble('tempCoefPmax'),
-            minOperatingTemp: pDouble('minOpTempMod'),
-            maxOperatingTemp: pDouble('maxOpTempMod'),
-            fuseCurrent: pDouble('fuseCurrent'),
-            physicalWarranty: pInt('physWarranty'),
-            efficiencyWarranty: pInt('effWarranty'),
-            efficiencyLoss: pDouble('effLoss'),
-          );
-          await isar.pvModules.put(m);
+      final catalog = EquipmentCatalog(getIt<Isar>());
+      if (type == 'modulo') {
+        final record = PvModule(
+          manufacturer: brand,
+          modelName: model,
+          powerWp: integer('powerWp'),
+          efficiency: number('efficiency'),
+          cellTechnology: _modCellTech,
+          isBifacial: _modBifacial,
+          isTier1: _modTier1,
+          length: number('length'),
+          width: number('width'),
+          weight: number('weight'),
+          vOc: number('vOc'),
+          iSc: number('iSc'),
+          vMp: number('vMp'),
+          iMp: number('iMp'),
+          maxSystemVoltage: number('maxSystemVoltage'),
+          tempCoefVoc: number('tempCoefVoc'),
+          tempCoefIsc: number('tempCoefIsc'),
+          tempCoefPmax: number('tempCoefPmax'),
+          minOperatingTemp: number('minOpTempMod'),
+          maxOperatingTemp: number('maxOpTempMod'),
+          fuseCurrent: number('fuseCurrent'),
+          physicalWarranty: integer('physWarranty'),
+          efficiencyWarranty: integer('effWarranty'),
+          efficiencyLoss: number('effLoss'),
+        );
+        if (widget.moduleToEdit != null) {
+          record.id = widget.moduleToEdit!.id;
+          await catalog.updateModule(record);
         } else {
-          final inv = Inverter(
-            manufacturer: _ctrl['brand']!.text.trim(),
-            modelName: _ctrl['model']!.text.trim(),
-            inverterType: _invType,
-            nominalPowerKw: pDouble('nomPowerKw'),
-            maxInputPowerKw: pDouble('maxInPowerKw'),
-            maxEfficiency: pDouble('maxEff'),
-            euroEfficiency: pDouble('euroEff'),
-            mpptCount: pInt('mpptCount'),
-            maxInputVoltage: pDouble('maxInVolts'),
-            nominalVoltageDc: pDouble('nomVoltsDc'),
-            startVoltage: pDouble('startVolts'),
-            minMpptVoltage: pDouble('minMpptVolts'),
-            maxMpptVoltage: pDouble('maxMpptVolts'),
-            maxInputCurrentPerMppt: pDouble('maxInCurrPerMppt'),
-            maxShortCircuitCurrent: pDouble('maxIsc'),
-            gridConnection: _invGridConn,
-            maxOutputCurrent: pDouble('maxOutCurr'),
-            nominalVoltageAc: pDouble('nomVoltsAc'),
-            dimensions: _ctrl['dimensions']!.text,
-            weight: pDouble('weight'),
-            minOperatingTemp: pDouble('minOpTempInv'),
-            maxOperatingTemp: pDouble('maxOpTempInv'),
-            protectionDegree: _ctrl['protDegree']!.text,
-            isHybrid: _invHybrid,
-            warrantyYears: pInt('warrantyYrs'),
-          );
-          await isar.inverters.put(inv);
+          await catalog.addModule(record);
         }
-      });
-
-      // [ADICIONADO] Recarrega lista de fabricantes após salvar um novo
-      await _loadManufacturers();
-
+      } else {
+        final record = Inverter(
+          manufacturer: brand,
+          modelName: model,
+          inverterType: _invType,
+          nominalPowerKw: number('nomPowerKw'),
+          maxInputPowerKw: number('maxInPowerKw'),
+          maxEfficiency: number('maxEff') / 100,
+          euroEfficiency: number('euroEff') / 100,
+          mpptCount: integer('mpptCount'),
+          mpptConfigurationJson: mpptConfig?.encode(),
+          maxInputVoltage: number('maxInVolts'),
+          nominalVoltageDc: number('nomVoltsDc'),
+          startVoltage: number('startVolts'),
+          minMpptVoltage: number('minMpptVolts'),
+          maxMpptVoltage: number('maxMpptVolts'),
+          maxInputCurrentPerMppt: mpptConfig?.inputCurrentsA == null
+              ? number('maxInCurrPerMppt')
+              : mpptConfig!.inputCurrentsA!
+                  .reduce((a, b) => a < b ? a : b),
+          maxShortCircuitCurrent: mpptConfig?.shortCircuitCurrentsA == null
+              ? number('maxIsc')
+              : mpptConfig!.shortCircuitCurrentsA!
+                  .reduce((a, b) => a < b ? a : b),
+          gridConnection: _invGridConn,
+          maxOutputCurrent: number('maxOutCurr'),
+          nominalVoltageAc: number('nomVoltsAc'),
+          dimensions: _ctrl['dimensions']!.text.trim(),
+          weight: number('weight'),
+          minOperatingTemp: number('minOpTempInv'),
+          maxOperatingTemp: number('maxOpTempInv'),
+          protectionDegree: _ctrl['protDegree']!.text.trim(),
+          isHybrid: _invHybrid,
+          warrantyYears: integer('warrantyYrs'),
+        );
+        if (widget.inverterToEdit != null) {
+          record.id = widget.inverterToEdit!.id;
+          await catalog.updateInverter(record);
+        } else {
+          await catalog.addInverter(record);
+        }
+      }
+      if (!mounted) return;
       if (_pendingAiModels.isNotEmpty) {
-        _pendingAiModels.removeAt(0);
+        setState(() {
+          final savedItem = _pendingAiModels.removeAt(0);
+          final key = _queueKey(savedItem);
+          if (savedItem is AiExtractedModule) {
+            _registeredModuleKeys.add(key);
+          } else {
+            _registeredInverterKeys.add(key);
+          }
+          _savedAiModels++;
+          if (_pendingAiModels.isNotEmpty) {
+            _loadCurrentAiModel();
+          }
+        });
         if (_pendingAiModels.isNotEmpty) {
-          setState(() => _loadCurrentAiModel());
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Salvo! Reagendando próximo...")));
-          return; 
+          _loadManufacturers();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$_savedAiModels salvo(s). '
+                'Confira o próximo modelo da fila.')),
+          );
+          return;
         }
       }
-
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Equipamento(s) salvo(s) com sucesso!")));
-      }
-    } catch (e) {
-      debugPrint("Erro ao salvar no banco: $e");
+      final saved = _savedAiModels;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(saved > 0
+            ? '$saved equipamento(s) importado(s) e salvo(s).'
+            : _editing ? 'Equipamento atualizado com sucesso.'
+            : 'Equipamento salvo no banco local.')),
+      );
+    } catch (error) {
+      _showError('Não foi possível salvar: $error');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -612,16 +1250,21 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     if (lower.contains('perc')) return CellTechnology.perc;
     if (lower.contains('n-type') || lower.contains('ntype') || lower.contains('topcon')) return CellTechnology.topcon;
     if (lower.contains('hjt')) return CellTechnology.hjt;
+    if (lower.contains('bsf')) return CellTechnology.alBSF;
     return CellTechnology.topcon;
   }
 
   InverterType _parseInverterType(String type) {
     final lower = type.toLowerCase();
     if (lower.contains('micro')) return InverterType.microInverter;
+    if (lower.contains('optim')) return InverterType.optimizer;
     return InverterType.string;
   }
 
   GridConnection _parseGridConnection(String conn) {
-    return conn.toLowerCase().contains('tri') ? GridConnection.triphasic : GridConnection.monophasic;
+    final lower = conn.toLowerCase();
+    if (lower.contains('tri')) return GridConnection.triphasic;
+    if (lower.contains('bi')) return GridConnection.biphasic;
+    return GridConnection.monophasic;
   }
 }

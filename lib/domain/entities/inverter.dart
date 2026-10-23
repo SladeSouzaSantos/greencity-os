@@ -1,6 +1,7 @@
 import 'package:isar/isar.dart';
 
 import '../enums/grid_connection.dart';
+import 'inverter_mppt_configuration.dart';
 import '../enums/inverter_type.dart';
 
 part 'inverter.g.dart';
@@ -24,6 +25,13 @@ class Inverter {
 
   // Entrada CC (MPPTs)
   final int mpptCount;
+  /// JSON opcional: limites reais por MPPT e total de entradas CC.
+  /// Registros legados permanecem válidos com null.
+  final String? mpptConfigurationJson;
+
+  @ignore
+  InverterMpptConfiguration? get mpptConfiguration =>
+      InverterMpptConfiguration.decode(mpptConfigurationJson);
   final double maxInputVoltage;       // Tensão CC Máx. (ex: 600V)
   final double nominalVoltageDc;      // Tensão CC Nominal (ex: 380V)
   final double startVoltage;          // Tensão de Início (ex: 40V)
@@ -58,6 +66,7 @@ class Inverter {
     required this.maxEfficiency,
     required this.euroEfficiency,
     required this.mpptCount,
+    this.mpptConfigurationJson,
     required this.maxInputVoltage,
     required this.nominalVoltageDc,
     required this.startVoltage,
