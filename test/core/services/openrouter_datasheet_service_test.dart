@@ -92,7 +92,12 @@ void main() {
         type: DioExceptionType.badResponse,
       ));
     }));
-    final service = OpenRouterDatasheetService(dio: dio, apiKey: 'private-key');
+    final service = OpenRouterDatasheetService(
+      dio: dio,
+      apiKey: 'private-key',
+      model: 'google/gemini-3.8-flash',
+      pdfEngine: 'cloudflare-ai',
+    );
     await expectLater(
       service.extractEquipmentData(pdf.path),
       throwsA(
