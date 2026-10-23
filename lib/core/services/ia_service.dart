@@ -32,8 +32,8 @@ class IAService {
       throw const FormatException('Arquivo PDF não encontrado.');
     }
     final length = await file.length();
-    if (length == 0 || length > 20 * 1024 * 1024) {
-      throw const FormatException('O PDF deve ter entre 1 byte e 20 MB.');
+    if (length == 0 || length > 10 * 1024 * 1024) {
+      throw const FormatException('O PDF deve ter entre 1 byte e 10 MB.');
     }
     final bytes = await file.readAsBytes();
     if (bytes.length < 5 ||

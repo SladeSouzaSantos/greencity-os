@@ -245,15 +245,30 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         if (isProcessingQueue)
           IconButton(
             icon: const Icon(Icons.close, color: Colors.red),
-            onPressed: () => setState(() {
+            onPressed: _isSaving ? null : () => setState(() {
               _pendingAiModels.clear();
               _totalAiModels = 0;
               _savedAiModels = 0;
+              _clearManualForm();
             }),
             tooltip: "Cancelar Fila",
           )
       ],
     );
+  }
+
+  void _clearManualForm() {
+    for (final controller in _ctrl.values) {
+      controller.clear();
+    }
+    _setDefaults();
+    type = widget.initialType;
+    _modCellTech = CellTechnology.topcon;
+    _modBifacial = false;
+    _modTier1 = false;
+    _invType = InverterType.string;
+    _invGridConn = GridConnection.triphasic;
+    _invHybrid = false;
   }
 
   Widget _buildAIActions() {
@@ -314,7 +329,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         FilledButton.tonalIcon(
           onPressed: _isSaving ? null : _importAllAiModels,
           icon: const Icon(Icons.library_add_check),
-          label: const Text('IMPORTAR TODOS OS MODELOS VÁLIDOS'),
+          label: const Text('IMPORTAR TODOS (SE COMPLETOS)'),
         ),
         const SizedBox(height: 8),
         TextButton.icon(
@@ -421,6 +436,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       } else {
         _totalAiModels = 0;
         _savedAiModels = 0;
+        _clearManualForm();
       }
     });
     _loadManufacturers();
@@ -688,8 +704,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     );
     if (selection == null || selection.files.isEmpty || !mounted) return;
     final file = selection.files.single;
-    if (file.size > 20 * 1024 * 1024) {
-      _showError('O arquivo PDF deve ter no máximo 20 MB.');
+    if (file.size > 10 * 1024 * 1024) {
+      _showError('O arquivo PDF deve ter no máximo 10 MB.');
       return;
     }
     if (file.path == null) {
