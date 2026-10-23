@@ -92,6 +92,23 @@ com duas listas: "modules" e "inverters" (listas vazias se não houver).
 Extraia TODOS os modelos exatos e variações, um objeto por modelo, SEM
 agrupar várias potências em um único objeto. Se o PDF listar 600, 605 e
 610 W, gere três módulos, cada um com seus próprios dados STC.
+
+ATENÇÃO A DATASHEETS DE INVERSORES COM TABELAS MULTICOLUNAS:
+- Cada COLUNA de modelo é um inversor separado, inclusive quando o título
+  do PDF contém apenas o nome de uma família de produtos.
+- Leia cada linha de potência nominal CA e potência máxima recomendada CC
+  por COLUNA. Não confunda kVA, kW nominais e máxima recomendada CC.
+- Uma especificação exibida em célula mesclada pode valer para um GRUPO
+  de colunas, não para a linha toda: associe o valor somente aos modelos
+  cobertos pela célula. MPPT, corrente, peso e dimensões podem variar
+  entre os grupos.
+- Quando aparecer "18A/18A" para dois MPPTs, registre mpptCount=2
+  e maxInputCurrentPerMppt=18, NUNCA some as correntes.
+- "Monofásico", "1F/N/PE" e "F+N" são gridConnection=monophasic.
+- Preserve rigorosamente os nomes exatos, incluindo sufixo "-G2",
+  e não crie modelos inexistentes por extrapolação.
+- Em inversores, eficiência enviada em porcentagem (97.5), e não
+  fração (0.975). Replique dados comuns apenas quando declarados.
 Extraia apenas o que estiver explícito no documento. NÃO estime, NÃO
 extrapole valores de tabelas, NÃO invente dimensões, eficiência, tipo ou
 garantias. Para cada campo não informado retorne null. Use números JSON
@@ -317,24 +334,31 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
       if (rawMessage is String) {
         final message = rawMessage.toLowerCase();
         if (message.contains('pdf') || message.contains('file-parser') ||
-            message.contains('cloudflare-ai')) {
-          return 'Confira o PDF e o motor OPENROUTER_PDF_ENGINE.';
+            message.contains('cloudflare-ai') ||
+            message.contains('file_data') || message.contains('base64') ||
+            message.contains('file size') || message.contains('payload')) {
+          return 'Erro ao processar o arquivo PDF. Experimente salvar uma '
+              'cópia otimizada (imagens comprimidas) e confira o motor '
+              'OPENROUTER_PDF_ENGINE.';
         }
         if (message.contains('response_format') ||
             message.contains('structured output') ||
             message.contains('json')) {
           return 'O modelo não aceita os parâmetros de saída JSON.';
         }
-        if (message.contains('model')) {
-          return 'Confira os modelos gratuitos configurados.';
+        if (message.contains('model') || message.contains('provider') ||
+            message.contains('endpoint')) {
+          return 'O provedor pode não aceitar algum parâmetro. '
+              'Confira os modelos gratuitos configurados e suas capacidades.';
         }
         if (message.contains('context') || message.contains('token')) {
           return 'O documento ou a resposta ultrapassou o limite do modelo.';
         }
       }
     }
-    return 'Requisição inválida; verifique o PDF, o modelo e o parser. '
-        'Veja a causa detalhada no painel Activity do OpenRouter.';
+    return 'Requisição inválida; o motivo exato não veio em formato '
+        'reconhecido pelo aplicativo. Consulte Activity no OpenRouter. '
+        'Se o PDF tiver muitas imagens, tente uma cópia otimizada.';
   }
 
   static String _friendlyError(DioException error) {

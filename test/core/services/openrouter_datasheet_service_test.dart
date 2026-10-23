@@ -220,6 +220,62 @@ void main() {
         throwsStateError);
   });
 
+  test('datasheet multicoluna AUXSOL: identifica sete inversores distintos', () {
+    // Referência: Datasheet AUXSOL ASN (3-6)SL-G2, revisão 20/07/2026.
+    // Este é um teste do contrato JSON/parser, NÃO uma chamada real à IA.
+    const models = <String>[
+      'ASN-3SL',
+      'ASN-3.3SL',
+      'ASN-3.6SL-G2',
+      'ASN-4SL-G2',
+      'ASN-4.6SL-G2',
+      'ASN-5SL-G2',
+      'ASN-6SL-G2',
+    ];
+    const powers = <double>[3, 3.3, 3.6, 4, 4.6, 5, 6];
+    const dcPowers = <double>[6, 6.6, 7.2, 8, 9.2, 10, 12];
+    const maxOutput = <double>[15, 15, 18, 20, 23, 25, 27.3];
+    final json = jsonEncode({
+      'modules': <Object>[],
+      'inverters': List.generate(models.length, (index) => {
+        'manufacturer': 'AUXSOL',
+        'modelName': models[index],
+        'inverterType': 'string',
+        'gridConnection': 'monophasic',
+        'nominalPowerKw': powers[index],
+        'maxInputPowerKw': dcPowers[index],
+        'maxEfficiency': 97.5,
+        'euroEfficiency': 97.0,
+        'mpptCount': index < 2 ? 1 : 2,
+        'maxInputVoltage': 550,
+        'nominalVoltageDc': 360,
+        'startVoltage': 40,
+        'minMpptVoltage': 40,
+        'maxMpptVoltage': 520,
+        'maxInputCurrentPerMppt': 18,
+        'maxShortCircuitCurrent': 22,
+        'maxOutputCurrent': maxOutput[index],
+        'nominalVoltageAc': 220,
+        'dimensions': index < 2 ? '297x239x139mm' : '330x268x168mm',
+        'protectionDegree': 'IP66',
+      }),
+    });
+    final result = OpenRouterDatasheetService.parseCompletion(
+      completion(content: json),
+    );
+    expect(result.modules, isEmpty);
+    expect(result.inverters, hasLength(7));
+    for (var index = 0; index < models.length; index++) {
+      final inv = result.inverters[index];
+      expect(inv.modelName, models[index]);
+      expect(inv.nominalPowerKw, powers[index]);
+      expect(inv.maxInputPowerKw, dcPowers[index]);
+      expect(inv.mpptCount, index < 2 ? 1 : 2);
+      expect(inv.maxInputCurrentPerMppt, 18);
+      expect(inv.maxOutputCurrent, maxOutput[index]);
+    }
+  });
+
   test('não importa retorno truncado', () {
     expect(
       () => OpenRouterDatasheetService.parseCompletion({

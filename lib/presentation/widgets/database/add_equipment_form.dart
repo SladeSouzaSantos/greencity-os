@@ -301,7 +301,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         const Text(
           'Confira cada valor extraído. Campos não identificados ficam '
           'em branco; complete os obrigatórios antes de salvar. '
-          'O PDF foi enviado ao serviço Gemini.',
+          'O PDF foi enviado ao OpenRouter e ao provedor do modelo.',
           style: TextStyle(fontSize: 12),
         ),
         const SizedBox(height: 8),
