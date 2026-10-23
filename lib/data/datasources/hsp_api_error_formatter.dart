@@ -37,28 +37,26 @@ class HspApiErrorFormatter {
       return 'A API HSP rejeitou a requisição (HTTP $status).';
     }
 
-    switch (error.type) {
-      case DioExceptionType.connectionTimeout:
+    // Comparar pelo nome preserva compatibilidade com Dio 5.9 e 5.11+,
+    // sem default inalcançável ou switch não exaustivo em versões diferentes.
+    switch (error.type.name) {
+      case 'connectionTimeout':
         return 'Tempo de conexão com a API HSP esgotado.';
-      case DioExceptionType.sendTimeout:
+      case 'sendTimeout':
         return 'Tempo limite ao enviar dados à API HSP.';
-      case DioExceptionType.receiveTimeout:
+      case 'receiveTimeout':
         return 'A API HSP demorou demais para responder.';
-      case DioExceptionType.connectionError:
+      case 'transformTimeout':
+        return 'Tempo limite ao processar a resposta da API HSP.';
+      case 'connectionError':
         return 'Não foi possível conectar à API HSP. Verifique sua conexão.';
-      case DioExceptionType.badCertificate:
+      case 'badCertificate':
         return 'Falha ao validar o certificado da API HSP.';
-      case DioExceptionType.cancel:
+      case 'cancel':
         return 'Cálculo HSP cancelado.';
-      case DioExceptionType.badResponse:
-      case DioExceptionType.unknown:
-        return 'Falha de comunicação com a API HSP.';
+      case 'badResponse':
+      case 'unknown':
       default:
-        // Versões recentes do Dio incluem transformTimeout; o fallback por
-        // nome mantém compatibilidade também com versões anteriores do Dio.
-        if (error.type.name == 'transformTimeout') {
-          return 'Tempo limite ao processar a resposta da API HSP.';
-        }
         return 'Falha de comunicação com a API HSP.';
     }
   }
