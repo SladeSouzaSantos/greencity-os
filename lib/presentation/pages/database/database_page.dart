@@ -68,6 +68,123 @@ class _DatabasePageState extends State<DatabasePage> with SingleTickerProviderSt
   }
 }
 
+
+void _editEquipment(BuildContext context, {PvModule? module, Inverter? inverter}) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => AddEquipmentForm(
+      initialType: module == null ? 'inversor' : 'modulo',
+      moduleToEdit: module,
+      inverterToEdit: inverter,
+    ),
+  );
+}
+
+Future<void> _viewEquipment(
+  BuildContext context, {PvModule? module, Inverter? inverter}
+) async {
+  final List<MapEntry<String, String>> rows;
+  final String title;
+  if (module != null) {
+    title = 'Módulo ${module.manufacturer} ${module.modelName}';
+    rows = [
+      MapEntry('Fabricante', module.manufacturer),
+      MapEntry('Modelo', module.modelName),
+      MapEntry('Potência STC', '${module.powerWp} Wp'),
+      MapEntry('Eficiência', '${module.efficiency}%'),
+      MapEntry('Tecnologia', module.cellTechnology.name),
+      MapEntry('Bifacial', module.isBifacial ? 'Sim' : 'Não'),
+      MapEntry('Tier 1', module.isTier1 ? 'Sim' : 'Não'),
+      MapEntry('Altura', '${module.length} mm'),
+      MapEntry('Largura', '${module.width} mm'),
+      MapEntry('Peso', '${module.weight} kg'),
+      MapEntry('Voc', '${module.vOc} V'),
+      MapEntry('Isc', '${module.iSc} A'),
+      MapEntry('Vmp', '${module.vMp} V'),
+      MapEntry('Imp', '${module.iMp} A'),
+      MapEntry('Tensão máxima', '${module.maxSystemVoltage} V'),
+      MapEntry('Coef. Pmax', '${module.tempCoefPmax} %/°C'),
+      MapEntry('Coef. Voc', '${module.tempCoefVoc} %/°C'),
+      MapEntry('Coef. Isc', '${module.tempCoefIsc} %/°C'),
+      MapEntry('Temperatura mínima', '${module.minOperatingTemp} °C'),
+      MapEntry('Temperatura máxima', '${module.maxOperatingTemp} °C'),
+      MapEntry('Fusível máximo', '${module.fuseCurrent} A'),
+      MapEntry('Garantia física', '${module.physicalWarranty} anos'),
+      MapEntry('Garantia eficiência', '${module.efficiencyWarranty} anos'),
+      MapEntry('Degradação final', '${module.efficiencyLoss}%'),
+    ];
+  } else if (inverter != null) {
+    title = 'Inversor ${inverter.manufacturer} ${inverter.modelName}';
+    rows = [
+      MapEntry('Fabricante', inverter.manufacturer),
+      MapEntry('Modelo', inverter.modelName),
+      MapEntry('Tipo', inverter.inverterType.name),
+      MapEntry('Conexão', inverter.gridConnection.name),
+      MapEntry('Híbrido', inverter.isHybrid ? 'Sim' : 'Não'),
+      MapEntry('Potência nominal CA', '${inverter.nominalPowerKw} kW'),
+      MapEntry('Potência recomendada CC', '${inverter.maxInputPowerKw} kW'),
+      MapEntry('Eficiência máxima', '${inverter.maxEfficiency * 100}%'),
+      MapEntry('Eficiência europeia', '${inverter.euroEfficiency * 100}%'),
+      MapEntry('MPPTs', '${inverter.mpptCount}'),
+      MapEntry('Tensão máxima CC', '${inverter.maxInputVoltage} V'),
+      MapEntry('Tensão nominal CC', '${inverter.nominalVoltageDc} V'),
+      MapEntry('Tensão inicial', '${inverter.startVoltage} V'),
+      MapEntry('MPPT mínimo', '${inverter.minMpptVoltage} V'),
+      MapEntry('MPPT máximo', '${inverter.maxMpptVoltage} V'),
+      MapEntry('Corrente máxima MPPT', '${inverter.maxInputCurrentPerMppt} A'),
+      MapEntry('Corrente Isc máxima', '${inverter.maxShortCircuitCurrent} A'),
+      MapEntry('Tensão nominal CA', '${inverter.nominalVoltageAc} V'),
+      MapEntry('Corrente máxima CA', '${inverter.maxOutputCurrent} A'),
+      MapEntry('Dimensões', inverter.dimensions),
+      MapEntry('Peso', '${inverter.weight} kg'),
+      MapEntry('Temperatura mínima', '${inverter.minOperatingTemp} °C'),
+      MapEntry('Temperatura máxima', '${inverter.maxOperatingTemp} °C'),
+      MapEntry('Proteção', inverter.protectionDegree),
+      MapEntry('Garantia', '${inverter.warrantyYears} anos'),
+    ];
+  } else {
+    return;
+  }
+
+  final edit = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final row in rows)
+                ListTile(
+                  dense: true,
+                  title: Text(row.key),
+                  subtitle: Text(row.value.isEmpty ? 'Não informado' : row.value),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Fechar'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Editar'),
+        ),
+      ],
+    ),
+  );
+  if (edit == true && context.mounted) {
+    _editEquipment(context, module: module, inverter: inverter);
+  }
+}
+
 // --- WIDGET DE MÓDULOS COM KEEPALIVE ---
 Future<void> _deleteEquipment(
   BuildContext context, {
@@ -150,15 +267,31 @@ class _ModuleListWidgetState extends State<ModuleListWidget> with AutomaticKeepA
               leading: const CircleAvatar(child: Icon(Icons.wb_sunny, size: 20)),
               title: Text(m.modelName),
               subtitle: Text("${m.manufacturer} - ${m.powerWp}Wp"),
-              trailing: IconButton(
-                tooltip: 'Remover módulo',
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                onPressed: () => _deleteEquipment(
-                  context,
-                  module: true,
-                  id: m.id,
-                  name: '${m.manufacturer} ${m.modelName}',
-                ),
+              onTap: () => _viewEquipment(context, module: m),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Visualizar módulo',
+                    icon: const Icon(Icons.visibility_outlined),
+                    onPressed: () => _viewEquipment(context, module: m),
+                  ),
+                  IconButton(
+                    tooltip: 'Editar módulo',
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _editEquipment(context, module: m),
+                  ),
+                  IconButton(
+                    tooltip: 'Remover módulo',
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () => _deleteEquipment(
+                      context,
+                      module: true,
+                      id: m.id,
+                      name: '${m.manufacturer} ${m.modelName}',
+                    ),
+                  ),
+                ],
               ),
             );
           },
@@ -206,15 +339,31 @@ class _InverterListWidgetState extends State<InverterListWidget> with AutomaticK
               leading: const CircleAvatar(backgroundColor: Colors.blue, child: Icon(Icons.inventory_2, size: 20, color: Colors.white)),
               title: Text("${inv.manufacturer} - ${inv.modelName}"),
               subtitle: Text("${inv.nominalPowerKw}kW"),
-              trailing: IconButton(
-                tooltip: 'Remover inversor',
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                onPressed: () => _deleteEquipment(
-                  context,
-                  module: false,
-                  id: inv.id,
-                  name: '${inv.manufacturer} ${inv.modelName}',
-                ),
+              onTap: () => _viewEquipment(context, inverter: inv),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Visualizar inversor',
+                    icon: const Icon(Icons.visibility_outlined),
+                    onPressed: () => _viewEquipment(context, inverter: inv),
+                  ),
+                  IconButton(
+                    tooltip: 'Editar inversor',
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _editEquipment(context, inverter: inv),
+                  ),
+                  IconButton(
+                    tooltip: 'Remover inversor',
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () => _deleteEquipment(
+                      context,
+                      module: false,
+                      id: inv.id,
+                      name: '${inv.manufacturer} ${inv.modelName}',
+                    ),
+                  ),
+                ],
               ),
             );
           },
