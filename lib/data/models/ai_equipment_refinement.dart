@@ -48,6 +48,10 @@ class AiEquipmentRefinement {
     number('euroEfficiency', i.euroEfficiency);
     number('mpptCount', i.mpptCount);
     if (i.totalDcInputs == null) missing.add('totalDcInputs');
+    if (i.totalDcInputs != null && i.mpptCount != null &&
+        i.totalDcInputs! < i.mpptCount!) {
+      missing.add('corrigir mpptCount vs totalDcInputs');
+    }
     if (i.mpptCount != null && i.mpptInputCurrentsA != null &&
         i.mpptInputCurrentsA!.length != i.mpptCount) {
       missing.add('corrigir mpptCount vs mpptInputCurrentsA');

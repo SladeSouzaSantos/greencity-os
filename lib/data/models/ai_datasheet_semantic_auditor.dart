@@ -108,6 +108,10 @@ class AiDatasheetSemanticAuditor {
       final issues = <String>[];
       var count = i.mpptCount;
       var inputs = i.totalDcInputs;
+      if (count != null && inputs != null && inputs < count) {
+        issues.add('INCONSISTENTE: $count MPPTs para apenas $inputs '
+            'entradas CC. Entradas precisam ser >= MPPTs.');
+      }
       if (trackers == null && _row(source, RegExp(
             r'(?:quantidade\s+(?:de\s+)?mppts?|number\s+of\s+mppts?)',
             caseSensitive: false)) != null) {
@@ -172,10 +176,16 @@ class AiDatasheetSemanticAuditor {
     for (var n = 0; n < lines.length; n++) {
       final match = label.firstMatch(lines[n]);
       if (match == null) continue;
-      final rest = lines[n].substring(match.end).trim();
+      // Conversão PDF->Markdown: "| Maximum Series Fuse | 35A |"
+      // pode conter pipes, negrito e separadores na mesma célula.
+      String clean(String text) => text.trim()
+          .replaceFirst(RegExp(r'^[\s*_:|]+'), '')
+          .replaceFirst(RegExp(r'[\s*_|]+$'), '')
+          .trim();
+      final rest = clean(lines[n].substring(match.end));
       if (rest.isNotEmpty) return rest;
       if (n + 1 < lines.length) {
-        final next = lines[n + 1].trim();
+        final next = clean(lines[n + 1]);
         if (RegExp(r'^[\d\s|/.,+°CA-]+$').hasMatch(next)) return next;
       }
     }

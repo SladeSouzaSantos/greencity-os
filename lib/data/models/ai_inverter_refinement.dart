@@ -22,7 +22,9 @@ class AiInverterRefinement {
       }
     }
     final combined = texts.where((v) => v.isNotEmpty).join('\n\n');
-    if (combined.length < 200) return null;
+    // Mesmo PDFs curtos podem conter uma tabela completa. O limite
+    // anterior de 200 caracteres ignorava essas anotações válidas.
+    if (combined.length < 30) return null;
     // Cabeçalhos e tabelas podem estar em qualquer página.
     // Não truncar silenciosamente o OCR antes da segunda análise.
     return combined;

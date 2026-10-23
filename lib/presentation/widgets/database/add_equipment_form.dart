@@ -756,6 +756,14 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       ),
 
       _buildSectionTitle("Entrada DC (MPPT)"),
+      if (_mpptTopologyWarning() != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            _mpptTopologyWarning()!,
+            style: const TextStyle(color: Colors.red),
+          ),
+        ),
       Row(
         children: [
           Expanded(child: _buildTextField("Qtd MPPTs", 'mpptCount')),
@@ -827,6 +835,14 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     );
   }
 
+  String? _mpptTopologyWarning() =>
+      EquipmentInputValidator.validateMpptTopology(
+        mpptCount: _ctrl['mpptCount']!.text,
+        totalDcInputs: _ctrl['totalDcInputs']!.text,
+        mpptCurrents: _ctrl['mpptCurrents']!.text,
+        mpptIscCurrents: _ctrl['mpptIscCurrents']!.text,
+      );
+
   Widget _buildTextField(String label, String ctrlKey) {
     final required = EquipmentInputValidator.isRequired(
       ctrlKey, isModule: type == 'modulo',
@@ -840,8 +856,14 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
             ? TextInputType.text
             : const TextInputType.numberWithOptions(decimal: true, signed: true),
         onChanged: (_) {
-          if (_pendingAiModels.isNotEmpty) {
-            setState(() => _manualEditedFields.add(ctrlKey));
+          if (_pendingAiModels.isNotEmpty ||
+              const {'mpptCount', 'totalDcInputs',
+                'mpptCurrents', 'mpptIscCurrents'}.contains(ctrlKey)) {
+            setState(() {
+              if (_pendingAiModels.isNotEmpty) {
+                _manualEditedFields.add(ctrlKey);
+              }
+            });
           }
         },
         validator: (value) => EquipmentInputValidator.validate(

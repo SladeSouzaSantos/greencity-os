@@ -57,6 +57,19 @@ void main() {
     ), contains('inteiro'));
   });
 
+  test('entradas CC não podem ser menores que rastreadores MPPT', () {
+    expect(EquipmentInputValidator.validateMpptTopology(
+      mpptCount: '3', totalDcInputs: '2', mpptCurrents: '32/16',
+    ), contains('maiores ou iguais'));
+    expect(EquipmentInputValidator.validateMpptTopology(
+      mpptCount: '2', totalDcInputs: '3', mpptCurrents: '32/16',
+      mpptIscCurrents: '40/20',
+    ), isNull);
+    expect(EquipmentInputValidator.validateMpptTopology(
+      mpptCount: '3', totalDcInputs: '3', mpptCurrents: '32/16',
+    ), contains('quantidade de correntes'));
+  });
+
   test('dimensões e grau de proteção são campos textuais', () {
     expect(
       EquipmentInputValidator.validate(

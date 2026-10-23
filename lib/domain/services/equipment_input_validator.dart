@@ -15,6 +15,33 @@ class EquipmentInputValidator {
     'mpptCurrents', 'mpptIscCurrents',
   };
 
+  /// Relação física mínima: cada MPPT exige ao menos uma entrada CC.
+  /// Vetores Impp/Isc representam rastreadores, não conectores individuais.
+  static String? validateMpptTopology({
+    required String? mpptCount,
+    required String? totalDcInputs,
+    String? mpptCurrents,
+    String? mpptIscCurrents,
+  }) {
+    int? count(String? raw) => int.tryParse((raw ?? '').trim());
+    final trackers = count(mpptCount);
+    final inputs = count(totalDcInputs);
+    if (trackers == null || trackers < 1) return null;
+    if (inputs != null && inputs < trackers) {
+      return 'Entradas CC ($inputs) devem ser maiores ou iguais '
+          'ao número de MPPTs ($trackers).';
+    }
+    for (final limits in [mpptCurrents, mpptIscCurrents]) {
+      if (limits == null || limits.trim().isEmpty) continue;
+      final parts = limits.split(RegExp(r'[/;]'));
+      if (parts.length != trackers) {
+        return 'A quantidade de correntes por rastreador '
+            'deve corresponder aos $trackers MPPTs.';
+      }
+    }
+    return null;
+  }
+
   static bool isTextField(String key) => _textFields.contains(key);
 
   static bool isRequired(String key, {required bool isModule}) =>
