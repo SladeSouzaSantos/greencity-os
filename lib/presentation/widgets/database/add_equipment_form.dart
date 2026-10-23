@@ -304,6 +304,20 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
           'O PDF foi enviado ao OpenRouter e ao provedor do modelo.',
           style: TextStyle(fontSize: 12),
         ),
+        if (_pendingAiModels.first is AiExtractedInverter &&
+            (_pendingAiModels.first as AiExtractedInverter)
+                    .hasAsymmetricMpptCurrents)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Atenção: este inversor tem correntes diferentes por MPPT: ' +
+              (_pendingAiModels.first as AiExtractedInverter)
+                  .mpptInputCurrentsA!.join(' / ') +
+              ' A. O catálogo atual guarda apenas uma corrente e usará '
+              'o MENOR limite por segurança. Revise antes de salvar.',
+              style: const TextStyle(color: Colors.deepOrange),
+            ),
+          ),
         const SizedBox(height: 8),
         Container(
           constraints: const BoxConstraints(maxHeight: 125),
@@ -357,6 +371,10 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         }
       } else if (item is AiExtractedInverter) {
         final issues = AiEquipmentMapper.inverterProblems(item);
+        if (item.hasAsymmetricMpptCurrents) {
+          // Ainda não há representação persistente por rastreador no Isar.
+          issues.add('correntes distintas por MPPT (revisar individualmente)');
+        }
         if (issues.isNotEmpty) {
           incomplete.add('${item.modelName}: ${issues.join(', ')}');
         } else {
@@ -675,10 +693,35 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       _showError('Não foi possível acessar o PDF selecionado.');
       return;
     }
+    if (file.size > 5 * 1024 * 1024) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('PDF grande'),
+          content: Text('O documento tem '
+              '${(file.size / (1024 * 1024)).toStringAsFixed(1)} MB. '
+              'Em Base64, o envio fica cerca de 33% maior e pode ultrapassar '
+              'os limites dos modelos gratuitos. É recomendado comprimir '
+              'imagens do PDF SEM prejudicar as tabelas técnicas. '
+              'Deseja continuar com o arquivo original?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Continuar'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+    }
     setState(() => _isLoadingAi = true);
     try {
-      // A execução é explícita: somente o arquivo selecionado é enviado.
-      // IAService lê PDF em memória e devolve listas tipadas completas.
+      // Somente o arquivo escolhido é enviado ao OpenRouter.
+      // Um refinamento opcional usa o texto retornado, sem reenviar o PDF.
       final result = await OpenRouterDatasheetService().extractEquipmentData(file.path!);
       if (!mounted) return;
       setState(() {
@@ -691,9 +734,13 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         _loadCurrentAiModel();
       });
       _loadManufacturers();
+      final incomplete = result.inverters
+          .where((item) => AiEquipmentMapper.inverterProblems(item).isNotEmpty)
+          .length;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${_pendingAiModels.length} modelo(s) identificado(s). '
-            'Confira cada registro antes de salvar.'),
+        content: Text('${_pendingAiModels.length} modelo(s) identificado(s); '
+            '$incomplete inversor(es) com campos obrigatórios ausentes. '
+            'Confira os dados técnicos antes de salvar.'),
       ));
     } catch (error) {
       if (!mounted) return;
@@ -813,6 +860,36 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       }
     }
 
+    if (_pendingAiModels.isNotEmpty &&
+        _pendingAiModels.first is AiExtractedInverter) {
+      final extracted = _pendingAiModels.first as AiExtractedInverter;
+      if (extracted.hasAsymmetricMpptCurrents) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Limites MPPT diferentes'),
+            content: Text('Correntes de entrada extraídas: '
+                '${extracted.mpptInputCurrentsA!.join(' / ')} A. '
+                'O banco atual armazena um único limite por MPPT. '
+                'O valor cadastrado será o menor limite, '
+                '${extracted.maxInputCurrentPerMppt} A. '
+                'Esta simplificação é conservadora, mas NÃO representa '
+                'integralmente os MPPTs. Deseja salvar mesmo assim?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Revisar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Salvar com limite conservador'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
+      }
+    }
     setState(() => _isSaving = true);
     try {
       final catalog = EquipmentCatalog(getIt<Isar>());
