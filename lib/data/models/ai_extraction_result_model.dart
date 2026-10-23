@@ -227,10 +227,22 @@ class AiExtractedInverter {
       startVoltage: n(startVoltage, newer.startVoltage),
       minMpptVoltage: n(minMpptVoltage, newer.minMpptVoltage),
       maxMpptVoltage: n(maxMpptVoltage, newer.maxMpptVoltage),
-      maxInputCurrentPerMppt: n(
-          maxInputCurrentPerMppt, newer.maxInputCurrentPerMppt),
-      maxShortCircuitCurrent: n(
-          maxShortCircuitCurrent, newer.maxShortCircuitCurrent),
+      maxInputCurrentPerMppt: newer.mpptInputCurrentsA == null
+          ? n(maxInputCurrentPerMppt, newer.maxInputCurrentPerMppt)
+          : AiNumericValueParser.minCurrent([
+              if (maxInputCurrentPerMppt != null &&
+                  maxInputCurrentPerMppt! > 0)
+                maxInputCurrentPerMppt!,
+              ...newer.mpptInputCurrentsA!,
+            ]),
+      maxShortCircuitCurrent: newer.mpptShortCircuitCurrentsA == null
+          ? n(maxShortCircuitCurrent, newer.maxShortCircuitCurrent)
+          : AiNumericValueParser.minCurrent([
+              if (maxShortCircuitCurrent != null &&
+                  maxShortCircuitCurrent! > 0)
+                maxShortCircuitCurrent!,
+              ...newer.mpptShortCircuitCurrentsA!,
+            ]),
       mpptInputCurrentsA: mpptInputCurrentsA ?? newer.mpptInputCurrentsA,
       mpptShortCircuitCurrentsA:
           mpptShortCircuitCurrentsA ?? newer.mpptShortCircuitCurrentsA,

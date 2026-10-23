@@ -50,6 +50,14 @@ class AiEquipmentMapper {
         value.maxMpptVoltage! > value.maxInputVoltage!) {
       problems.add('faixa de tensão MPPT inconsistente');
     }
+    if (value.mpptInputCurrentsA != null && value.mpptCount != null &&
+        value.mpptInputCurrentsA!.length != value.mpptCount) {
+      problems.add('número de correntes não corresponde aos MPPTs');
+    }
+    if (value.mpptShortCircuitCurrentsA != null && value.mpptCount != null &&
+        value.mpptShortCircuitCurrentsA!.length != value.mpptCount) {
+      problems.add('número de correntes Isc não corresponde aos MPPTs');
+    }
     if (inverterType(value.inverterType) == null) {
       problems.add('tipo de inversor');
     }

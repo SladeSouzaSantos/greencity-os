@@ -52,6 +52,25 @@ void main() {
     expect(merged.inverters.last.maxInputPowerKw, 13.2);
   });
 
+  test('refino usa o menor limite se primeira leitura ignorou MPPT central', () {
+    final first = make([{
+      'manufacturer': 'Solplanet', 'modelName': 'ASW9100-S',
+      'maxInputCurrentPerMppt': 20,
+      'maxShortCircuitCurrent': 28,
+    }]);
+    final corrected = make([{
+      'manufacturer': 'Solplanet', 'modelName': 'ASW9100-S',
+      'maxInputCurrentPerMppt': '20 A/16 A/20 A',
+      'maxShortCircuitCurrent': '28 A/22.5 A/28 A',
+    }]);
+    final value = AiInverterRefinement.mergeMissing(
+      first, corrected,
+    ).inverters.single;
+    expect(value.mpptInputCurrentsA, [20,16,20]);
+    expect(value.maxInputCurrentPerMppt, 16);
+    expect(value.maxShortCircuitCurrent, 22.5);
+  });
+
   test('módulos isolados não ativam segunda leitura', () {
     final base = AiExtractionResultModel.fromJson({
       'modules': [{'manufacturer': 'BYD', 'modelName': 'BYD595'}],
