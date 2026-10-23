@@ -5,6 +5,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'data/datasources/solar_seed_data.dart';
+import 'domain/entities/inverter.dart';
+import 'domain/entities/pv_module.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:greencity_os/core/injection/injection.dart';
 import 'package:greencity_os/presentation/bloc/solar_hsp_bloc.dart';
