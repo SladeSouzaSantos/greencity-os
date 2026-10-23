@@ -78,6 +78,20 @@ void main() {
     );
   }
 
+  test('temperaturas baixas preservam ganho elétrico positivo', () {
+    final system = SolarSystem(
+      id: '2',
+      name: 'teste térmico',
+      inverter: inverter,
+      arrays: [array('frio', 15, 710, 6.45)],
+    );
+    final normal = system.calculateSystemGenerationForMonth(0, null);
+    final frio = system.calculateSystemGenerationForMonth(
+      0, List.filled(12, -15.0),
+    );
+    expect(frio, greaterThan(normal));
+  });
+
   test('POA do arranjo não é nivelada pelo menor HSP no MPPT', () {
     final a = array('a', 15, 710, 6.45);
     final b = array('b', 55, 615, 5.18);

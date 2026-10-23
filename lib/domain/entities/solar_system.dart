@@ -38,7 +38,7 @@ class SolarSystem {
       final double temperaturaCelula = tempMax + 29;
       final coef = array.solarScenario.module.tempCoefPmax;
       final fatorTemperatura =
-          (1 + ((temperaturaCelula - 25) * coef / 100)).clamp(0.0, 1.0);
+          (1 + ((temperaturaCelula - 25) * coef / 100)).clamp(0.0, double.infinity);
 
       totalGeneration += (array.totalPowerWp / 1000.0) *
           hsp *
