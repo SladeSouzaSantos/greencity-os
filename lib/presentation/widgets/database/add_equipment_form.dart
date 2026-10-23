@@ -5,6 +5,7 @@ import 'package:isar/isar.dart';
 import '../../../core/injection/injection.dart';
 import '../../../core/services/ia_service.dart';
 import '../../../data/repositories/equipment_catalog.dart';
+import '../../../domain/services/equipment_input_validator.dart';
 import '../../../data/models/ai_extraction_result_model.dart';
 import '../../../data/models/ai_equipment_mapper.dart';
 import '../../../domain/entities/inverter.dart';
@@ -627,61 +628,23 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     );
   }
 
-  static const _moduleRequired = {
-    'powerWp', 'efficiency', 'length', 'width', 'vOc', 'iSc', 'vMp', 'iMp',
-  };
-  static const _inverterRequired = {
-    'nomPowerKw', 'maxInPowerKw', 'mpptCount', 'maxInVolts',
-    'minMpptVolts', 'maxMpptVolts', 'maxInCurrPerMppt',
-  };
-  static const _integerFields = {
-    'powerWp', 'mpptCount', 'physWarranty', 'effWarranty', 'warrantyYrs',
-  };
-  static const _textFields = {'dimensions', 'protDegree'};
-
-  String? _validateEquipmentField(String key, String? raw) {
-    if (_textFields.contains(key)) return null;
-    final requiredKeys =
-        type == 'modulo' ? _moduleRequired : _inverterRequired;
-    final value = raw?.trim() ?? '';
-    if (value.isEmpty) {
-      return requiredKeys.contains(key) ? 'Campo obrigatório.' : null;
-    }
-    final parsed = double.tryParse(value.replaceAll(',', '.'));
-    if (parsed == null || !parsed.isFinite) return 'Número inválido.';
-    if (_integerFields.contains(key) && parsed != parsed.roundToDouble()) {
-      return 'Informe um número inteiro.';
-    }
-    if (requiredKeys.contains(key) && parsed <= 0) {
-      return 'Informe um valor maior que zero.';
-    }
-    if (!key.startsWith('tempCoef') &&
-        !key.startsWith('minOpTemp') &&
-        !key.startsWith('maxOpTemp') &&
-        parsed < 0) {
-      return 'Valor não pode ser negativo.';
-    }
-    if ((key == 'efficiency' || key == 'maxEff' ||
-         key == 'euroEff' || key == 'effLoss') && parsed > 100) {
-      return 'Máximo de 100%.';
-    }
-    return null;
-  }
-
   Widget _buildTextField(String label, String ctrlKey) {
-    final requiredKeys = type == 'modulo'
-        ? _moduleRequired : _inverterRequired;
-    final required = requiredKeys.contains(ctrlKey);
+    final required = EquipmentInputValidator.isRequired(
+      ctrlKey, isModule: type == 'modulo',
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
         controller: _ctrl[ctrlKey],
         decoration: _inputDecoration(required ? '$label *' : label),
-        keyboardType: _textFields.contains(ctrlKey)
+        keyboardType: EquipmentInputValidator.isTextField(ctrlKey)
             ? TextInputType.text
-            : const TextInputType.numberWithOptions(
-                decimal: true, signed: true),
-        validator: (v) => _validateEquipmentField(ctrlKey, v),
+            : const TextInputType.numberWithOptions(decimal: true, signed: true),
+        validator: (value) => EquipmentInputValidator.validate(
+          key: ctrlKey,
+          value: value,
+          isModule: type == 'modulo',
+        ),
       ),
     );
   }
