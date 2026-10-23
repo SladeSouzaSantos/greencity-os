@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:isar/isar.dart';
 
 import '../../../core/injection/injection.dart';
-import '../../../core/services/openrouter_datasheet_service.dart';
+import '../../../core/services/datasheet_ai_service.dart';
 import '../../../data/repositories/equipment_catalog.dart';
 import '../../../domain/services/equipment_input_validator.dart';
 import '../../../data/models/ai_extraction_result_model.dart';
@@ -53,6 +53,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   final Set<String> _registeredModuleKeys = {};
   final Set<String> _registeredInverterKeys = {};
   Map<String, List<String>> _aiAuditWarnings = {};
+  String _aiProviderDescription = '';
   final Set<String> _manualEditedFields = {};
   bool _isLoadingAi = false;
   bool _isSaving = false;
@@ -405,11 +406,11 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
-        const Text(
+        Text(
           'Confira cada valor extraído. Campos não identificados ficam '
           'em branco; complete os obrigatórios antes de salvar. '
-          'O PDF foi enviado ao OpenRouter e ao provedor do modelo.',
-          style: TextStyle(fontSize: 12),
+          '$_aiProviderDescription',
+          style: const TextStyle(fontSize: 12),
         ),
         if (_pendingAiModels.first is AiExtractedInverter &&
             (_pendingAiModels.first as AiExtractedInverter)
@@ -901,7 +902,9 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       _showError('Não foi possível acessar o PDF selecionado.');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
+    final aiService = DatasheetAiService();
+    // Aviso Base64 somente quando o PDF é realmente transmitido ao provedor.
+    if (!aiService.useOllama && file.size > 5 * 1024 * 1024) {
       final proceed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -928,10 +931,9 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     }
     setState(() => _isLoadingAi = true);
     try {
-      // Somente o arquivo escolhido é enviado ao OpenRouter.
-      // Um refinamento opcional usa o texto retornado, sem reenviar o PDF.
-      final result = await OpenRouterDatasheetService()
-          .extractEquipmentData(file.path!);
+      // Com Ollama ativo o PDF é processado apenas na própria máquina;
+      // com Ollama desativado, preserva o fluxo original OpenRouter.
+      final result = await aiService.extractEquipmentData(file.path!);
       if (!mounted) return;
       final isar = getIt<Isar>();
       final modulesAlready = await isar.pvModules.where().findAll();
@@ -939,6 +941,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       if (!mounted) return;
       setState(() {
         _aiAuditWarnings = result.auditWarnings;
+        _aiProviderDescription = aiService.providerDescription;
         _manualEditedFields.clear();
         _registeredModuleKeys
           ..clear()
