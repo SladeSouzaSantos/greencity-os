@@ -40,6 +40,21 @@ void main() {
     );
   });
 
+  test('lida com transformTimeout sem switch não exaustivo', () {
+    final matching = DioExceptionType.values.where(
+      (type) => type.name == 'transformTimeout',
+    );
+    if (matching.isEmpty) return; // Compatibilidade com Dio anterior a 5.11.
+    final error = DioException(
+      requestOptions: request,
+      type: matching.first,
+    );
+    expect(
+      HspApiErrorFormatter.format(error),
+      contains('processar a resposta'),
+    );
+  });
+
   test('distingue timeout de validação', () {
     final timeout = DioException(
       requestOptions: request,

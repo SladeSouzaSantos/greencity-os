@@ -53,6 +53,13 @@ class HspApiErrorFormatter {
       case DioExceptionType.badResponse:
       case DioExceptionType.unknown:
         return 'Falha de comunicação com a API HSP.';
+      default:
+        // Versões recentes do Dio incluem transformTimeout; o fallback por
+        // nome mantém compatibilidade também com versões anteriores do Dio.
+        if (error.type.name == 'transformTimeout') {
+          return 'Tempo limite ao processar a resposta da API HSP.';
+        }
+        return 'Falha de comunicação com a API HSP.';
     }
   }
 
