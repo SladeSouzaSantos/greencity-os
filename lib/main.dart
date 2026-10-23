@@ -42,7 +42,7 @@ void main() async {
   
   // Complemento v2 importado uma única vez, preservando dados existentes.
   final verifiedMarker = File(
-    directory.path + Platform.pathSeparator + '.greencity_souenergy_verified_v2',
+    '${directory.path}${Platform.pathSeparator}.greencity_souenergy_verified_v2',
   );
   if (!await verifiedMarker.exists()) {
     await EquipmentCatalog(isar).importMany(

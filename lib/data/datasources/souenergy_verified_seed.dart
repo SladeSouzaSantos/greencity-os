@@ -20,7 +20,7 @@ class SouEnergyVerifiedSeed {
       for (var i = 0; i < wp.length; i++)
         PvModule(
           manufacturer: 'Jetion Solar',
-          modelName: 'JT' + wp[i].toString() + 'SLk(B)',
+          modelName: 'JT${wp[i]}SLk(B)',
           cellTechnology: CellTechnology.hjt,
           powerWp: wp[i], efficiency: eff[i],
           vOc: vo[i], iSc: isc[i], vMp: vm[i], iMp: im[i],
