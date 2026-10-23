@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:isar/isar.dart';
 
 import '../../../core/injection/injection.dart';
+import 'equipment_error_dialog.dart';
 import '../../../core/services/datasheet_ai_service.dart';
 import '../../../data/repositories/equipment_catalog.dart';
 import '../../../domain/services/equipment_input_validator.dart';
@@ -930,14 +931,22 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       if (proceed != true || !mounted) return;
     }
     setState(() => _isLoadingAi = true);
+    var failureContext = 'na extração do datasheet';
     try {
       // Com Ollama ativo o PDF é processado apenas na própria máquina;
       // com Ollama desativado, preserva o fluxo original OpenRouter.
       final result = await aiService.extractEquipmentData(file.path!);
       if (!mounted) return;
+      // Evita ler uma coleção não relacionada: um PDF de módulos não
+      // depende da integridade dos registros de inversores e vice-versa.
+      failureContext = 'na consulta de duplicatas no banco Isar';
       final isar = getIt<Isar>();
-      final modulesAlready = await isar.pvModules.where().findAll();
-      final invertersAlready = await isar.inverters.where().findAll();
+      final modulesAlready = result.modules.isEmpty
+          ? <PvModule>[]
+          : await isar.pvModules.where().findAll();
+      final invertersAlready = result.inverters.isEmpty
+          ? <Inverter>[]
+          : await isar.inverters.where().findAll();
       if (!mounted) return;
       setState(() {
         _aiAuditWarnings = result.auditWarnings;
@@ -975,7 +984,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       ));
     } catch (error) {
       if (!mounted) return;
-      _showError('Falha na leitura do PDF: $error');
+      _showError('Falha $failureContext: $error');
     } finally {
       if (mounted) setState(() => _isLoadingAi = false);
     }
@@ -1061,9 +1070,9 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
+    // SnackBars do Scaffold principal ficam atrás do modal de equipamento.
+    // O diálogo usa o Navigator raiz e permanece legível acima do formulário.
+    EquipmentErrorDialog.show(context, message);
   }
 
   Future<void> _saveAndNext() async {
