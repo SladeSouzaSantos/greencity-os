@@ -20,15 +20,31 @@ lib/
 └── main.dart          # Ponto de entrada e Injeção de Dependência
 ```
 
-## Configuração local da IA (Gemini)
+## Configuração local da IA (OpenRouter)
 
-1. Copie `.env.example` para `.env` na raiz do projeto.
-2. Configure `GEMINI_API_KEY` no arquivo `.env` local, sem aspas.
-3. Execute `flutter pub get` e `flutter run`.
+1. Copie `.env.example` para `.env` na raiz do projeto e configure
+   `OPENROUTER_API_KEY` com uma chave da sua conta OpenRouter.
+2. Configure `OPENROUTER_MODEL` com o ID do modelo desejado em
+   https://openrouter.ai/models. O padrão `google/gemini-3.8-flash` usa
+   Gemini **por meio do OpenRouter**, mas você pode trocar por qualquer
+   modelo compatível. OpenRouter é um gateway, não um modelo de IA.
+3. `OPENROUTER_PDF_ENGINE=cloudflare-ai` usa processamento PDF para
+   markdown/texto sem custo adicional de OCR; `native` exige modelo
+   compatível com PDF; `mistral-ocr` pode ter cobrança adicional por página.
+4. Execute `flutter pub get` e `flutter run -d windows`.
 
-O arquivo `.env` está no `.gitignore`, e `lib/main.dart` o carrega antes de iniciar o app. A chave previamente publicada no repositório deve ser **revogada e substituída**: removê-la de commits novos não a elimina do histórico.
+O arquivo `.env` está no `.gitignore`, é carregado antes de iniciar
+a aplicação e **não é modificado automaticamente**. Se ainda estiver com
+`GEMINI_API_KEY`, substitua manualmente pela nova chave OpenRouter.
+Uma chave Gemini relatada como vazada deve ser revogada em seu próprio
+provedor; o OpenRouter exige uma chave nova e independente.
 
-**Segurança:** `flutter_dotenv` inclui o `.env` nos assets do build. Portanto, essa configuração serve para desenvolvimento, não protege uma chave em APK/IPA/web distribuído. Para produção, mova o consumo do Gemini para um backend com autenticação e limitação de uso.
+**Segurança:** `flutter_dotenv` incorpora o `.env` nos assets do aplicativo,
+permitindo extrair qualquer chave incluída no build distribuído. Por isso,
+use essa configuração exclusivamente para desenvolvimento local. Em produção,
+implemente uma API backend com chave no servidor, autenticação e limites de uso.
+O importador OpenRouter usa Dio independente **sem LogInterceptor**, evitando
+registrar o PDF ou o token no console durante a importação.
 
 ## Identidade visual — ícone do aplicativo
 
@@ -70,28 +86,23 @@ minúsculas ou espaços repetidos.
 
 ### Importação de datasheet PDF por IA
 
-1. Configure `GEMINI_API_KEY` no seu **.env local**. Pode configurar
-   `GEMINI_MODEL` para escolher um modelo Gemini disponível.
+1. Configure `OPENROUTER_API_KEY` no **.env local**, além de
+   `OPENROUTER_MODEL` e `OPENROUTER_PDF_ENGINE` se desejar.
 2. Em **Banco de Dados Solar > Adicionar**, escolha
    **Importar datasheet PDF com IA** (PDF de até 10 MB).
-3. O documento selecionado é enviado à API do Google Gemini, que devolve
-   uma lista de módulos e inversores. A tela apresenta cada modelo
-   individualmente, com os dados técnicos disponíveis.
+3. O documento selecionado é enviado ao OpenRouter, que processa o PDF
+   com o motor escolhido e o modelo configurado. A resposta contém uma
+   lista de módulos e inversores; cada modelo é apresentado individualmente.
 4. Confira fabricante, modelo, potência, STC, dimensões e limites MPPT.
    Você pode **revisar e salvar um por um**, pular modelos, ou usar
    **Importar todos (se completos)** para registrar a lista de uma vez.
-5. O salvamento em lote é **atômico** e rejeita o lote quando faltam
-   especificações obrigatórias. Registros existentes/duplicados são
-   ignorados. Os campos opcionais não encontrados podem ser guardados
-   como zero (não informado) porque o esquema Isar atual não usa null.
-   **Revise antes de utilizar no dimensionamento real.**
+5. O lote é **atômico**, exige parâmetros essenciais e ignora duplicatas.
+   Campos opcionais não encontrados podem ser guardados como zero no Isar
+   existente (não informado). Confira o datasheet antes de dimensionar.
 
-**Privacidade:** somente PDFs escolhidos explicitamente são enviados à
-API Gemini. A chave em `.env` é apenas adequada para desenvolvimento:
-qualquer chave embutida em aplicativos distribuídos pode ser extraída.
-Para distribuir publicamente, mova a chamada Gemini para um backend seguro.
-A integração mantém o SDK Dart existente; esse SDK está obsoleto e merece
-uma migração separada em uma próxima etapa.
+**Privacidade e custo:** somente PDFs escolhidos explicitamente são
+enviados ao OpenRouter e ao provedor de inferência. O modelo escolhido pode
+cobrar tokens e motores de OCR podem cobrar por página.
 
 ### Validação no Windows
 

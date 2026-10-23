@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:isar/isar.dart';
 
 import '../../../core/injection/injection.dart';
-import '../../../core/services/ia_service.dart';
+import '../../../core/services/openrouter_datasheet_service.dart';
 import '../../../data/repositories/equipment_catalog.dart';
 import '../../../domain/services/equipment_input_validator.dart';
 import '../../../data/models/ai_extraction_result_model.dart';
@@ -679,7 +679,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     try {
       // A execução é explícita: somente o arquivo selecionado é enviado.
       // IAService lê PDF em memória e devolve listas tipadas completas.
-      final result = await IAService().extractEquipmentData(file.path!);
+      final result = await OpenRouterDatasheetService().extractEquipmentData(file.path!);
       if (!mounted) return;
       setState(() {
         _pendingAiModels
