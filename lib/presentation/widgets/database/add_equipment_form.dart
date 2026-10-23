@@ -408,8 +408,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         const SizedBox(height: 8),
         Text(
           'Confira cada valor extraído. Campos não identificados ficam '
-          'em branco; complete os obrigatórios antes de salvar. ' +
-          _aiProviderDescription,
+          'em branco; complete os obrigatórios antes de salvar. '
+          '$_aiProviderDescription',
           style: const TextStyle(fontSize: 12),
         ),
         if (_pendingAiModels.first is AiExtractedInverter &&

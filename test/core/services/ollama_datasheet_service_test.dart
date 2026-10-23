@@ -10,7 +10,7 @@ void main() {
   late File pdf;
   setUp(() async {
     temp = await Directory.systemTemp.createTemp('greencity_ollama_test_');
-    pdf = File(temp.path + '/datasheet.pdf');
+    pdf = File('${temp.path}/datasheet.pdf');
     await pdf.writeAsBytes(utf8.encode('%PDF-1.7\nfixture'));
   });
   tearDown(() async {
