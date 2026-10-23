@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:isar/isar.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'data/datasources/solar_seed_data.dart';
@@ -16,9 +19,22 @@ void main() async {
   
   final isar = getIt<Isar>();
   
-  await isar.writeTxn(() => isar.clear());
-
-  await SolarSeedData.seed(isar);
+  // Nunca apague o catálogo na inicialização: os dados são persistentes.
+  // O marcador impede que a remoção de todos os equipamentos volte a
+  // popular o banco na próxima execução.
+  final directory = await getApplicationDocumentsDirectory();
+  final seedMarker = File(
+    '${directory.path}${Platform.pathSeparator}.greencity_seed_v1',
+  );
+  if (!await seedMarker.exists()) {
+    final existingModules = await isar.pvModules.count();
+    final existingInverters = await isar.inverters.count();
+    if (existingModules == 0 && existingInverters == 0) {
+      await SolarSeedData.seed(isar);
+    }
+    // Também marca bases pré-existentes para nunca sobrescrever o catálogo.
+    await seedMarker.writeAsString('initialized', flush: true);
+  }
   
   runApp(const MyApp());
 }
