@@ -51,8 +51,13 @@ class DatasheetAiService {
        _capacityCheck = openRouterCapacityCheck,
        _cloud = cloudService ?? CloudDatasheetService();
 
-  String get _mode => (_modeOverride ??
-      dotenv.env['AI_PROVIDER'] ?? '').trim().toLowerCase();
+  String get _mode {
+    if (_modeOverride != null) return _modeOverride.trim().toLowerCase();
+    // Compatibilidade com testes e injeção de dependências: a escolha
+    // explícita da API antiga não exige carregar dotenv.
+    if (_ollamaEnabledOverride != null) return '';
+    return (dotenv.env['AI_PROVIDER'] ?? '').trim().toLowerCase();
+  }
 
   bool get useAuto => _mode == 'auto';
 
@@ -132,7 +137,9 @@ class DatasheetAiService {
       }
 
       if (provider == CloudAiProvider.openRouter) {
-        final key = (dotenv.env['OPENROUTER_API_KEY'] ?? '').trim();
+        final key = (_configuredOverride != null && _capacityCheck != null)
+            ? '' // Teste injetado: nenhuma chave real deve ser consultada.
+            : (dotenv.env['OPENROUTER_API_KEY'] ?? '').trim();
         // Em testes, o verificador pode ser injetado sem credenciais reais.
         if (_capacityCheck != null || key.isNotEmpty) {
           final check = _capacityCheck ??
