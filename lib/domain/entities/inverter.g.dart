@@ -104,50 +104,50 @@ const InverterSchema = CollectionSchema(
       name: r'modelName',
       type: IsarType.string,
     ),
-    r'mpptCount': PropertySchema(
+    r'mpptConfigurationJson': PropertySchema(
       id: 17,
+      name: r'mpptConfigurationJson',
+      type: IsarType.string,
+    ),
+    r'mpptCount': PropertySchema(
+      id: 18,
       name: r'mpptCount',
       type: IsarType.long,
     ),
     r'nominalPowerKw': PropertySchema(
-      id: 18,
+      id: 19,
       name: r'nominalPowerKw',
       type: IsarType.double,
     ),
     r'nominalVoltageAc': PropertySchema(
-      id: 19,
+      id: 20,
       name: r'nominalVoltageAc',
       type: IsarType.double,
     ),
     r'nominalVoltageDc': PropertySchema(
-      id: 20,
+      id: 21,
       name: r'nominalVoltageDc',
       type: IsarType.double,
     ),
     r'protectionDegree': PropertySchema(
-      id: 21,
+      id: 22,
       name: r'protectionDegree',
       type: IsarType.string,
     ),
     r'startVoltage': PropertySchema(
-      id: 22,
+      id: 23,
       name: r'startVoltage',
       type: IsarType.double,
     ),
     r'warrantyYears': PropertySchema(
-      id: 23,
+      id: 24,
       name: r'warrantyYears',
       type: IsarType.long,
     ),
     r'weight': PropertySchema(
-      id: 24,
+      id: 25,
       name: r'weight',
       type: IsarType.double,
-    ),
-    r'mpptConfigurationJson': PropertySchema(
-      id: 25,
-      name: r'mpptConfigurationJson',
-      type: IsarType.string,
     )
   },
   estimateSize: _inverterEstimateSize,
@@ -187,10 +187,13 @@ int _inverterEstimateSize(
   bytesCount += 3 + object.dimensions.length * 3;
   bytesCount += 3 + object.manufacturer.length * 3;
   bytesCount += 3 + object.modelName.length * 3;
-  bytesCount += 3 + object.protectionDegree.length * 3;
-  if (object.mpptConfigurationJson != null) {
-    bytesCount += 3 + object.mpptConfigurationJson!.length * 3;
+  {
+    final value = object.mpptConfigurationJson;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
   }
+  bytesCount += 3 + object.protectionDegree.length * 3;
   return bytesCount;
 }
 
@@ -217,15 +220,15 @@ void _inverterSerialize(
   writer.writeDouble(offsets[14], object.minMpptVoltage);
   writer.writeDouble(offsets[15], object.minOperatingTemp);
   writer.writeString(offsets[16], object.modelName);
-  writer.writeLong(offsets[17], object.mpptCount);
-  writer.writeDouble(offsets[18], object.nominalPowerKw);
-  writer.writeDouble(offsets[19], object.nominalVoltageAc);
-  writer.writeDouble(offsets[20], object.nominalVoltageDc);
-  writer.writeString(offsets[21], object.protectionDegree);
-  writer.writeDouble(offsets[22], object.startVoltage);
-  writer.writeLong(offsets[23], object.warrantyYears);
-  writer.writeDouble(offsets[24], object.weight);
-  writer.writeString(offsets[25], object.mpptConfigurationJson);
+  writer.writeString(offsets[17], object.mpptConfigurationJson);
+  writer.writeLong(offsets[18], object.mpptCount);
+  writer.writeDouble(offsets[19], object.nominalPowerKw);
+  writer.writeDouble(offsets[20], object.nominalVoltageAc);
+  writer.writeDouble(offsets[21], object.nominalVoltageDc);
+  writer.writeString(offsets[22], object.protectionDegree);
+  writer.writeDouble(offsets[23], object.startVoltage);
+  writer.writeLong(offsets[24], object.warrantyYears);
+  writer.writeDouble(offsets[25], object.weight);
 }
 
 Inverter _inverterDeserialize(
@@ -256,15 +259,15 @@ Inverter _inverterDeserialize(
     minMpptVoltage: reader.readDouble(offsets[14]),
     minOperatingTemp: reader.readDouble(offsets[15]),
     modelName: reader.readString(offsets[16]),
-    mpptCount: reader.readLong(offsets[17]),
-    nominalPowerKw: reader.readDouble(offsets[18]),
-    nominalVoltageAc: reader.readDouble(offsets[19]),
-    nominalVoltageDc: reader.readDouble(offsets[20]),
-    protectionDegree: reader.readString(offsets[21]),
-    startVoltage: reader.readDouble(offsets[22]),
-    warrantyYears: reader.readLongOrNull(offsets[23]) ?? 10,
-    weight: reader.readDouble(offsets[24]),
-    mpptConfigurationJson: reader.readStringOrNull(offsets[25]),
+    mpptConfigurationJson: reader.readStringOrNull(offsets[17]),
+    mpptCount: reader.readLong(offsets[18]),
+    nominalPowerKw: reader.readDouble(offsets[19]),
+    nominalVoltageAc: reader.readDouble(offsets[20]),
+    nominalVoltageDc: reader.readDouble(offsets[21]),
+    protectionDegree: reader.readString(offsets[22]),
+    startVoltage: reader.readDouble(offsets[23]),
+    warrantyYears: reader.readLongOrNull(offsets[24]) ?? 10,
+    weight: reader.readDouble(offsets[25]),
   );
   object.id = id;
   return object;
@@ -316,23 +319,23 @@ P _inverterDeserializeProp<P>(
     case 16:
       return (reader.readString(offset)) as P;
     case 17:
-      return (reader.readLong(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 18:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readLong(offset)) as P;
     case 19:
       return (reader.readDouble(offset)) as P;
     case 20:
       return (reader.readDouble(offset)) as P;
     case 21:
-      return (reader.readString(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     case 22:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 23:
-      return (reader.readLongOrNull(offset) ?? 10) as P;
-    case 24:
       return (reader.readDouble(offset)) as P;
+    case 24:
+      return (reader.readLongOrNull(offset) ?? 10) as P;
     case 25:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -1777,6 +1780,161 @@ extension InverterQueryFilter
     });
   }
 
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'mpptConfigurationJson',
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'mpptConfigurationJson',
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'mpptConfigurationJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'mpptConfigurationJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'mpptConfigurationJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'mpptConfigurationJson',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'mpptConfigurationJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'mpptConfigurationJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'mpptConfigurationJson',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonMatches(String pattern,
+          {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'mpptConfigurationJson',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'mpptConfigurationJson',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterFilterCondition>
+      mpptConfigurationJsonIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'mpptConfigurationJson',
+        value: '',
+      ));
+    });
+  }
+
   QueryBuilder<Inverter, Inverter, QAfterFilterCondition> mpptCountEqualTo(
       int value) {
     return QueryBuilder.apply(this, (query) {
@@ -2557,6 +2715,19 @@ extension InverterQuerySortBy on QueryBuilder<Inverter, Inverter, QSortBy> {
     });
   }
 
+  QueryBuilder<Inverter, Inverter, QAfterSortBy> sortByMpptConfigurationJson() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mpptConfigurationJson', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterSortBy>
+      sortByMpptConfigurationJsonDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mpptConfigurationJson', Sort.desc);
+    });
+  }
+
   QueryBuilder<Inverter, Inverter, QAfterSortBy> sortByMpptCount() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'mpptCount', Sort.asc);
@@ -2876,6 +3047,19 @@ extension InverterQuerySortThenBy
     });
   }
 
+  QueryBuilder<Inverter, Inverter, QAfterSortBy> thenByMpptConfigurationJson() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mpptConfigurationJson', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Inverter, Inverter, QAfterSortBy>
+      thenByMpptConfigurationJsonDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mpptConfigurationJson', Sort.desc);
+    });
+  }
+
   QueryBuilder<Inverter, Inverter, QAfterSortBy> thenByMpptCount() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'mpptCount', Sort.asc);
@@ -3082,6 +3266,14 @@ extension InverterQueryWhereDistinct
     });
   }
 
+  QueryBuilder<Inverter, Inverter, QDistinct> distinctByMpptConfigurationJson(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'mpptConfigurationJson',
+          caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<Inverter, Inverter, QDistinct> distinctByMpptCount() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'mpptCount');
@@ -3244,6 +3436,13 @@ extension InverterQueryProperty
   QueryBuilder<Inverter, String, QQueryOperations> modelNameProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'modelName');
+    });
+  }
+
+  QueryBuilder<Inverter, String?, QQueryOperations>
+      mpptConfigurationJsonProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'mpptConfigurationJson');
     });
   }
 
