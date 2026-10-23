@@ -6,7 +6,7 @@ import 'package:greencity_os/domain/entities/solar_scenario_result.dart';
 import 'package:greencity_os/domain/services/solar_reference_service.dart';
 
 void main() {
-  final project = SolarProject(
+  SolarProject makeProject() => SolarProject(
     clientName: 'Teste',
     city: 'Natal',
     state: 'RN',
@@ -38,6 +38,7 @@ void main() {
       );
 
   test('HSP horizontal permanece estável após arranjos 15° e 55°', () {
+    final project = makeProject();
     SolarReferenceService.updateProjectReference(
       project, response('placeholder', 5.796),
     );
@@ -54,6 +55,10 @@ void main() {
   });
 
   test('fallback antigo não substitui GHI por HSP inclinado', () {
+    final project = makeProject();
+    SolarReferenceService.updateProjectReference(
+      project, response('placeholder', 5.796),
+    );
     SolarReferenceService.updateProjectReference(
       project, response('arranjo-55', 5.18),
     );

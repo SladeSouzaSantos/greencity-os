@@ -8,6 +8,7 @@ class SolarSystemCard extends StatelessWidget {
   final VoidCallback onAddArray;
   final Function(SolarArray) onRemoveArray;
   final Function(SolarArray, int) onMpptChanged;
+  final double? referenceHorizontalHsp;
 
   const SolarSystemCard({
     super.key,
@@ -16,6 +17,7 @@ class SolarSystemCard extends StatelessWidget {
     required this.onAddArray,
     required this.onRemoveArray,
     required this.onMpptChanged,
+    this.referenceHorizontalHsp,
   });
 
   @override
@@ -81,27 +83,16 @@ class SolarSystemCard extends StatelessWidget {
   Widget _buildArrayTile(SolarArray array) {
     final bool isIndividual = array.solarScenario.id.contains("(Placa");
     
-    // Simulação de onde os dados viriam. 
-    // Substitua pelas propriedades reais do seu objeto de resultado (Ex: array.result.hspReal)
-    debugPrint("array.solarScenario: ${array.solarScenarioResult?.shadowLossPercentage}");
-    String? rawPercentage = array.solarScenarioResult?.shadowLossPercentage;
-
-  // 2. Só tentamos o parse se a String não for nula
-    double perdaSombreamento = 0.0;
-
-    if (rawPercentage != null) {
-      perdaSombreamento = double.tryParse(
-        rawPercentage.replaceAll('%', '').trim()
-      ) ?? 0.0;
-    }
-
-    double hspIndividual = array.solarScenarioResult?.averageHspReal ?? 0.0;
-    double hspEfetivo = system.getEffectiveHspForArray(array);
-    
-    // Cálculo de "perda por incompatibilidade" (mismatch)
-    double mismatchLoss = hspIndividual > 0 
-        ? (1 - (hspEfetivo / hspIndividual)) * 100 
-        : 0.0;
+    final result = array.solarScenarioResult;
+    final double? horizontal = result?.horizontalHsp ?? referenceHorizontalHsp;
+    final double? poa = result?.averageHspReal;
+    final double? frontal = result?.frontalHsp;
+    final double? rear = result?.rearEquivalentHsp;
+    final bool needsMpptReview = system.needsMpptElectricalReview(array);
+    final String? rawPercentage = result?.shadowLossPercentage;
+    final double shadowLoss = double.tryParse(
+      rawPercentage?.replaceAll('%', '').trim() ?? '',
+    ) ?? 0.0;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -135,33 +126,39 @@ class SolarSystemCard extends StatelessWidget {
               style: const TextStyle(fontSize: 11, color: Colors.black54),
             ),
             const SizedBox(height: 8),  
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
               children: [
-                // HSP INDIVIDUAL
-                _hspBadge("HSP Local: ${hspIndividual.toStringAsFixed(2)}h", Colors.grey),
-                const SizedBox(width: 8),
-                
-                // HSP EFETIVO (O QUE VALE NO CÁLCULO)
                 _hspBadge(
-                  "HSP Real: ${hspEfetivo.toStringAsFixed(2)}h", 
-                  mismatchLoss > 1 ? Colors.orange.shade800 : Colors.green
+                  "HSP local (GHI): ${horizontal?.toStringAsFixed(2) ?? '--'} kWh/m²/dia",
+                  Colors.grey,
+                ),
+                _hspBadge(
+                  "HSP do arranjo${array.solarScenario.module.isBifacial ? ' bifacial' : ''}: ${poa?.toStringAsFixed(2) ?? '--'} kWh/m²/dia",
+                  Colors.green.shade700,
                 ),
               ],
-            ), 
-            const SizedBox(height: 4),          
+            ),
+            if (frontal != null && rear != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                "Frontal: ${frontal.toStringAsFixed(2)} | Traseira equivalente: ${rear.toStringAsFixed(2)} kWh/m²/dia",
+                style: const TextStyle(fontSize: 11, color: Colors.black54),
+              ),
+            ],
+            const SizedBox(height: 4),
             Text(
-              "Perda Sombra: ${perdaSombreamento.toStringAsFixed(1)}%",
+              "Perda Sombra: ${shadowLoss.toStringAsFixed(1)}%",
               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.redAccent),
             ),
-            if (mismatchLoss > 1) 
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                "⚠ Perda por mismatch: ${mismatchLoss.toStringAsFixed(1)}% (Verifique o MPPT!)",
-                style: const TextStyle(fontSize: 10, color: Colors.orange, fontWeight: FontWeight.bold),
+            if (needsMpptReview) ...[
+              const SizedBox(height: 4),
+              const Text(
+                "⚠ MPPT compartilhado por arranjos distintos. Verifique ligação, corrente e tensão; perdas elétricas não modeladas.",
+                style: TextStyle(fontSize: 11, color: Colors.deepOrange, fontWeight: FontWeight.w600),
               ),
-            ),
+            ],
             const SizedBox(height: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8),

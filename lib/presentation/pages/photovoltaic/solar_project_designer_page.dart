@@ -352,6 +352,7 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
               ] else ...[
                 ...systems.map((s) => SolarSystemCard(
                   system: s,
+                  referenceHorizontalHsp: widget.project.referenceHspHorizontal?.annualAverage,
                   onDeleteSystem: (){
                     setState(() => systems.remove(s));
                     _onCalculatePressed();
