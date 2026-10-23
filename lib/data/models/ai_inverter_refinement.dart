@@ -2,8 +2,6 @@ import 'ai_extraction_result_model.dart';
 
 /// Refinamento com anotações do próprio parser OpenRouter (sem reenviar PDF).
 class AiInverterRefinement {
-  static const maxSourceChars = 18000;
-
   static bool needsRefinement(AiExtractionResultModel result) =>
       result.inverters.any((item) => item.missingEssentialFields >= 2);
 
@@ -25,9 +23,9 @@ class AiInverterRefinement {
     }
     final combined = texts.where((v) => v.isNotEmpty).join('\n\n');
     if (combined.length < 200) return null;
-    if (combined.length <= maxSourceChars) return combined;
-    // As tabelas técnicas normalmente ficam no final dos datasheets.
-    return combined.substring(combined.length - maxSourceChars);
+    // Cabeçalhos e tabelas podem estar em qualquer página.
+    // Não truncar silenciosamente o OCR antes da segunda análise.
+    return combined;
   }
 
   static String prompt(AiExtractionResultModel initial, String sourceText) {

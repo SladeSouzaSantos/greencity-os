@@ -3,7 +3,7 @@
 class OpenRouterFreeModelPolicy {
   static const defaultPrimary = 'nvidia/nemotron-3.5-super-vl:free';
   static const defaultFallbacks =
-      'nvidia/nemotron-3-super-120b-a12b:free';
+      'dots-studio/dots-3-note-preview:free';
 
   static bool isFreeModel(String id) =>
       id.trim().endsWith(':free') &&

@@ -85,6 +85,41 @@ void main() {
     expect(result.inverters.first.mpptInputCurrentsA, [20,16,20]);
   });
 
+  test('enriquece módulo incompleto sem retransmitir PDF', () async {
+    final dio = Dio();
+    final requests = <Map>[];
+    final docText = List.filled(3,
+      'Ficha técnica Jetion JT-700 STC 700 Wp; Vmp 41 V; '
+      'Voc 49.5 V; comprimento 2382 mm; tecnologia TOPCON.'
+    ).join(' ');
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      requests.add(options.data as Map);
+      handler.resolve(Response(
+        requestOptions: options, statusCode: 200,
+        data: requests.length == 1
+          ? completion({'modules': [{
+              'manufacturer': 'Jetion', 'modelName': 'JT-700',
+              'powerWp': 700,
+            }], 'inverters': []}, annotations: [{
+              'type': 'file', 'file': {'content': [
+                {'type': 'text', 'text': docText},
+              ]},
+            }])
+          : completion({'modules': [{
+              'manufacturer': 'Jetion', 'modelName': 'JT-700',
+              'powerWp': 705, 'vMp': 41, 'vOc': 49.5,
+              'length': 2382, 'cellTechnology': 'TOPCON',
+            }], 'inverters': []}),
+      ));
+    }));
+    final result = await service(dio).extractEquipmentData(pdf.path);
+    expect(requests, hasLength(2));
+    expect(requests.last.containsKey('plugins'), isFalse);
+    expect(result.modules.single.powerWp, 700);
+    expect(result.modules.single.vMp, 41);
+    expect(result.modules.single.length, 2382);
+  });
+
   test('sem annotations retorna extração inicial sem novo envio', () async {
     final dio = Dio();
     var count = 0;

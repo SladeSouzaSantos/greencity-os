@@ -7,7 +7,7 @@ import 'package:greencity_os/core/services/openrouter_datasheet_service.dart';
 
 void main() {
   const primary = 'nvidia/nemotron-3.5-super-vl:free';
-  const fallback = 'nvidia/nemotron-3-super-120b-a12b:free';
+  const fallback = 'dots-studio/dots-3-note-preview:free';
   late Directory tmp;
   late File pdf;
 
@@ -274,6 +274,12 @@ void main() {
       expect(inv.maxInputCurrentPerMppt, 18);
       expect(inv.maxOutputCurrent, maxOutput[index]);
     }
+  });
+
+  test('rejeita JSON quando o array de inversores não foi incluído', () {
+    expect(() => OpenRouterDatasheetService.parseCompletion(
+      completion(content: '{"modules":[{"manufacturer":"J","modelName":"M"}]}'),
+    ), throwsFormatException);
   });
 
   test('não importa retorno truncado', () {

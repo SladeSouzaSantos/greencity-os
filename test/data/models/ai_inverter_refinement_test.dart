@@ -28,6 +28,20 @@ void main() {
     expect(AiInverterRefinement.parsedPdfText({'choices': []}), isNull);
   });
 
+  test('preserva o início e fim de OCR com mais de 18 mil caracteres', () {
+    final source = 'CABECALHO_STC\n' +
+        List.filled(20000, 'x').join() + '\nTABELA_FINAL';
+    final text = AiInverterRefinement.parsedPdfText({
+      'choices': [{'message': {'annotations': [{
+        'type': 'file',
+        'file': {'content': [{'type': 'text', 'text': source}]},
+      }]}}],
+    });
+    expect(text, contains('CABECALHO_STC'));
+    expect(text, contains('TABELA_FINAL'));
+    expect(text!.length, greaterThan(18000));
+  });
+
   test('mescla sem sobrescrever valores já identificados e inclui variantes', () {
     final base = make([{
       'manufacturer': 'Solplanet', 'modelName': 'ASW9100-S',

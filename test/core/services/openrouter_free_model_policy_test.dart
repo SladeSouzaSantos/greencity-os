@@ -48,9 +48,12 @@ void main() {
     );
   });
 
-  test('padrões são gratuitos mesmo sem configuração', () {
+  test('padrões seguem a dupla gratuita escolhida', () {
     final models = OpenRouterFreeModelPolicy.resolve();
-    expect(models, hasLength(2));
+    expect(models, [
+      'nvidia/nemotron-3.5-super-vl:free',
+      'dots-studio/dots-3-note-preview:free',
+    ]);
     expect(models.every(OpenRouterFreeModelPolicy.isFreeModel), isTrue);
   });
 }

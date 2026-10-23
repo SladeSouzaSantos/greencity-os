@@ -12,7 +12,7 @@ class AiNumericValueParser {
     if (m == null) return null;
     final suffix = (m.group(2) ?? '').toLowerCase();
     return _decimal(m.group(1)!,
-        thousands: suffix == 'w' || suffix == 'wp' || suffix == 'va');
+        thousands: const {'w', 'wp', 'va', 'v', 'mm'}.contains(suffix));
   }
 
   static double? powerKw(dynamic raw, {bool rawIsWatts = false}) {

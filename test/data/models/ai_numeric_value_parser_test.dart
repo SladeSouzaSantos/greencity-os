@@ -10,6 +10,9 @@ void main() {
     expect(AiNumericValueParser.powerKw(13200, rawIsWatts: true), 13.2);
     expect(AiNumericValueParser.powerKw('7.3 kW'), 7.3);
     expect(AiNumericValueParser.number('97,7 %'), 97.7);
+    expect(AiNumericValueParser.number('1,500 V'), 1500);
+    expect(AiNumericValueParser.number('1.500 mm'), 1500);
+    expect(AiNumericValueParser.number('1,5 V'), 1.5);
     expect(AiNumericValueParser.number('80 V - 560 V'), isNull);
     expect(AiNumericValueParser.number('< 18 kg'), isNull);
   });

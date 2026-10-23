@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import '../../data/models/ai_equipment_refinement.dart';
 import '../../data/models/ai_extraction_result_model.dart';
 import '../../data/models/ai_inverter_refinement.dart';
 import 'openrouter_free_model_policy.dart';
@@ -183,7 +184,7 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
     );
     try {
       final initial = parseCompletion(response);
-      if (!AiInverterRefinement.needsRefinement(initial)) return initial;
+      if (!AiEquipmentRefinement.needsRefinement(initial)) return initial;
 
       // O CloudflareAI pode devolver markdown em file.annotations;
       // uma única segunda chamada SÓ DE TEXTO evita retransmitir o PDF
@@ -201,13 +202,13 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
             'content': [
               {
                 'type': 'text',
-                'text': AiInverterRefinement.prompt(initial, extractedText),
+                'text': AiEquipmentRefinement.prompt(initial, extractedText),
               },
             ],
           },
         );
         final additional = parseCompletion(refined);
-        return AiInverterRefinement.mergeMissing(initial, additional);
+        return AiEquipmentRefinement.mergeMissing(initial, additional);
       } on Exception {
         // A segunda chamada é opcional. Se falhar (por exemplo, quota
         // do :free), não descarte o que foi extraído na primeira.
@@ -228,7 +229,7 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
               'content': [
                 {
                   'type': 'text',
-                  'text': AiInverterRefinement.recoveryPrompt(extractedText),
+                  'text': AiEquipmentRefinement.recoveryPrompt(extractedText),
                 }
               ],
             },
@@ -274,7 +275,7 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
           'model': models.first,
           'models': models,
           'temperature': 0.1,
-          'max_tokens': 8192,
+          'max_tokens': 16384,
           if (includeResponseFormat)
             'response_format': {'type': 'json_object'},
           if (hasPdf)
@@ -381,9 +382,10 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
       }
       rethrow;
     }
-    if (decoded is! Map) {
+    if (decoded is! Map || decoded['modules'] is! List ||
+        decoded['inverters'] is! List) {
       throw const FormatException(
-        'A resposta precisa ser um objeto JSON com modules e inverters.',
+        'A resposta precisa conter arrays JSON modules e inverters.',
       );
     }
     final parsed = AiExtractionResultModel.fromJson(
