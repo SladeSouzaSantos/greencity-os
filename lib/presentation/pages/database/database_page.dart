@@ -86,6 +86,8 @@ Future<void> _viewEquipment(
 ) async {
   final List<MapEntry<String, String>> rows;
   final String title;
+  String optionalNum(num n, String suffix) =>
+      n == 0 ? 'Não informado' : '$n $suffix';
   if (module != null) {
     title = 'Módulo ${module.manufacturer} ${module.modelName}';
     rows = [
@@ -98,7 +100,7 @@ Future<void> _viewEquipment(
       MapEntry('Tier 1', module.isTier1 ? 'Sim' : 'Não'),
       MapEntry('Altura', '${module.length} mm'),
       MapEntry('Largura', '${module.width} mm'),
-      MapEntry('Peso', '${module.weight} kg'),
+      MapEntry('Peso', optionalNum(module.weight, 'kg')),
       MapEntry('Voc', '${module.vOc} V'),
       MapEntry('Isc', '${module.iSc} A'),
       MapEntry('Vmp', '${module.vMp} V'),
@@ -110,9 +112,9 @@ Future<void> _viewEquipment(
       MapEntry('Temperatura mínima', '${module.minOperatingTemp} °C'),
       MapEntry('Temperatura máxima', '${module.maxOperatingTemp} °C'),
       MapEntry('Fusível máximo', '${module.fuseCurrent} A'),
-      MapEntry('Garantia física', '${module.physicalWarranty} anos'),
-      MapEntry('Garantia eficiência', '${module.efficiencyWarranty} anos'),
-      MapEntry('Degradação final', '${module.efficiencyLoss}%'),
+      MapEntry('Garantia física', optionalNum(module.physicalWarranty, 'anos')),
+      MapEntry('Garantia eficiência', optionalNum(module.efficiencyWarranty, 'anos')),
+      MapEntry('Degradação final', optionalNum(module.efficiencyLoss, '%')),
     ];
   } else if (inverter != null) {
     title = 'Inversor ${inverter.manufacturer} ${inverter.modelName}';
@@ -125,8 +127,12 @@ Future<void> _viewEquipment(
       MapEntry('Potência nominal CA', '${inverter.nominalPowerKw} kW'),
       MapEntry('Potência recomendada CC', '${inverter.maxInputPowerKw} kW'),
       MapEntry('Eficiência máxima', '${inverter.maxEfficiency * 100}%'),
-      MapEntry('Eficiência europeia', '${inverter.euroEfficiency * 100}%'),
+      MapEntry('Eficiência europeia', optionalNum(inverter.euroEfficiency * 100, '%')),
       MapEntry('MPPTs', '${inverter.mpptCount}'),
+      const MapEntry('Limitação da versão',
+        'Uma única corrente por MPPT é armazenada. Se os rastreadores '
+        'tiverem limites diferentes, confira a ficha original antes '
+        'do dimensionamento.'),
       MapEntry('Tensão máxima CC', '${inverter.maxInputVoltage} V'),
       MapEntry('Tensão nominal CC', '${inverter.nominalVoltageDc} V'),
       MapEntry('Tensão inicial', '${inverter.startVoltage} V'),
@@ -137,11 +143,11 @@ Future<void> _viewEquipment(
       MapEntry('Tensão nominal CA', '${inverter.nominalVoltageAc} V'),
       MapEntry('Corrente máxima CA', '${inverter.maxOutputCurrent} A'),
       MapEntry('Dimensões', inverter.dimensions),
-      MapEntry('Peso', '${inverter.weight} kg'),
+      MapEntry('Peso', optionalNum(inverter.weight, 'kg')),
       MapEntry('Temperatura mínima', '${inverter.minOperatingTemp} °C'),
       MapEntry('Temperatura máxima', '${inverter.maxOperatingTemp} °C'),
       MapEntry('Proteção', inverter.protectionDegree),
-      MapEntry('Garantia', '${inverter.warrantyYears} anos'),
+      MapEntry('Garantia', optionalNum(inverter.warrantyYears, 'anos')),
     ];
   } else {
     return;
