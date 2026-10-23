@@ -1,75 +1,134 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:google_generative_ai/google_generative_ai.dart';
+
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:google_generative_ai/google_generative_ai.dart';
 
 import '../../data/models/ai_extraction_result_model.dart';
 
+/// Extração de múltiplos equipamentos a partir de datasheets PDF.
+/// O documento é enviado ao Gemini apenas após seleção explícita do usuário.
 class IAService {
   String get _apiKey {
     final key = dotenv.env['GEMINI_API_KEY']?.trim();
     if (key == null || key.isEmpty) {
       throw StateError(
-        'GEMINI_API_KEY não configurada. Crie um arquivo .env na raiz do projeto.',
+        'GEMINI_API_KEY ausente no .env. Configure a chave para importar PDFs.',
       );
     }
     return key;
-  } 
-
-  Future<AiExtractionResultModel> extractEquipmentData(String filePath) async {
-    final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: _apiKey);
-    final fileBytes = await File(filePath).readAsBytes();
-
-    final prompt = [
-      Content.multi([
-        TextPart("""Analise este datasheet solar e extraia TODOS os modelos/variações de potência presentes na tabela técnica.
-        Retorne um JSON com esta estrutura exata:
-        {
-          "modules": [ 
-            { "manufacturer": "string", "modelName": "string", "powerWp": number, "efficiency": number, "vOc": number, "iSc": number, "vMp": number, "iMp": number, "cellTechnology": "PERC|TOPCon", "isBifacial": bool, "length": number, "width": number, "weight": number, "tempCoefPmax": number, "tempCoefVoc": number, "tempCoefIsc": number }
-          ],
-          "inverters": [
-            { "manufacturer": "string", "modelName": "string", "nominalPowerKw": number, "maxInputPowerKw": number, "mpptCount": number, "maxInputVoltage": number, "maxEfficiency": number, "maxOutputCurrent": number, "inverterType": "string|micro", "gridConnection": "monophasic|triphasic", "isHybrid": bool, "weight": number }
-          ]
-        }
-        Se for um datasheet de módulo, preencha a lista 'modules'. Se for inversor, preencha 'inverters'. 
-        Extraia todas as variações da tabela (ex: 450W, 455W, 460W)."""),
-        DataPart('application/pdf', fileBytes),
-      ])
-    ];
-
-    final response = await model.generateContent(prompt);
-    
-    if (response.text != null) {
-      String cleanJson = response.text!.replaceAll('```json', '').replaceAll('```', '').trim();
-      return AiExtractionResultModel.fromJson(jsonDecode(cleanJson));
-    }
-    throw Exception("Falha ao extrair dados do datasheet");
   }
 
-  Future<Map<String, dynamic>?> analyzeDatasheet(String filePath) async {
-    final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: _apiKey);
-    final fileBytes = await File(filePath).readAsBytes();
+  String get _model {
+    final configured = dotenv.env['GEMINI_MODEL']?.trim();
+    return configured == null || configured.isEmpty
+        ? 'gemini-3.8-flash'
+        : configured;
+  }
 
-    // Prompt agressivo para garantir que ele retorne apenas JSON
-    final prompt = [
-      Content.multi([
-        TextPart("""Analise este datasheet de equipamento solar. 
-        Extraia: Fabricante, Modelo e Potência (Wp para módulos ou kW para inversores).
-        Retorne APENAS um JSON no formato: 
-        {"manufacturer": "string", "modelName": "string", "power": number}
-        Não escreva mais nada além do JSON."""),
-        DataPart('application/pdf', fileBytes),
-      ])
-    ];
-
-    final response = await model.generateContent(prompt);
-    
-    if (response.text != null) {
-      // Limpa possíveis marcações de Markdown que o Gemini coloca (```json ...)
-      String cleanJson = response.text!.replaceAll('```json', '').replaceAll('```', '').trim();
-      return jsonDecode(cleanJson);
+  Future<AiExtractionResultModel> extractEquipmentData(String filePath) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw const FormatException('Arquivo PDF não encontrado.');
     }
-    return null;
+    final length = await file.length();
+    if (length == 0 || length > 20 * 1024 * 1024) {
+      throw const FormatException('O PDF deve ter entre 1 byte e 20 MB.');
+    }
+    final bytes = await file.readAsBytes();
+    if (bytes.length < 5 ||
+        String.fromCharCodes(bytes.take(5)) != '%PDF-') {
+      throw const FormatException('Selecione um arquivo PDF válido.');
+    }
+
+    final model = GenerativeModel(
+      model: _model,
+      apiKey: _apiKey,
+      generationConfig: GenerationConfig(
+        responseMimeType: 'application/json',
+        temperature: 0.1,
+      ),
+    );
+
+    const prompt = '''
+Analise o PDF de datasheet fotovoltaico e devolva SOMENTE JSON
+com duas listas: "modules" e "inverters" (listas vazias se não houver).
+Extraia TODOS os modelos exatos e variações, um objeto por modelo, SEM
+agrupar várias potências em um único objeto. Se o PDF listar 600, 605 e
+610 W, gere três módulos, cada um com seus próprios dados STC.
+Extraia apenas o que estiver explícito no documento. NÃO estime, NÃO
+extrapole valores de tabelas, NÃO invente dimensões, eficiência, tipo ou
+garantias. Para cada campo não informado retorne null. Use números JSON
+sem unidade, ponto decimal e booleanos JSON. Mantenha a potência de
+módulos em Wp, de inversores em kW; dimensões de módulos em mm, peso
+em kg, temperatura em °C, tensão em V, corrente em A.
+Eficiência de módulo em porcentagem (ex: 22.8) e eficiência de
+inversor em porcentagem (ex: 98.2). Coeficientes térmicos em %/°C.
+Use parâmetros de STC, não NMOT. Preserve o fabricante e o código
+integral do modelo (incluindo sufixos); repita dados compartilhados
+da família para cada variante SOMENTE se estiverem no documento.
+
+Estrutura:
+{
+ "modules": [{
+   "manufacturer": "string", "modelName": "string",
+   "powerWp": null, "efficiency": null,
+   "cellTechnology": "TOPCON|PERC|AL_BSF|HJT",
+   "isBifacial": null, "isTier1": null,
+   "length": null, "width": null, "weight": null,
+   "vOc": null, "iSc": null, "vMp": null, "iMp": null,
+   "maxSystemVoltage": null, "tempCoefPmax": null,
+   "tempCoefVoc": null, "tempCoefIsc": null,
+   "minOperatingTemp": null, "maxOperatingTemp": null,
+   "fuseCurrent": null, "physicalWarranty": null,
+   "efficiencyWarranty": null, "efficiencyLoss": null
+ }],
+ "inverters": [{
+   "manufacturer": "string", "modelName": "string",
+   "inverterType": "string|microInverter|optimizer",
+   "gridConnection": "monophasic|biphasic|triphasic",
+   "isHybrid": null, "nominalPowerKw": null,
+   "maxInputPowerKw": null, "maxEfficiency": null,
+   "euroEfficiency": null, "mpptCount": null,
+   "maxInputVoltage": null, "nominalVoltageDc": null,
+   "startVoltage": null, "minMpptVoltage": null,
+   "maxMpptVoltage": null, "maxInputCurrentPerMppt": null,
+   "maxShortCircuitCurrent": null, "maxOutputCurrent": null,
+   "nominalVoltageAc": null, "dimensions": null,
+   "weight": null, "minOperatingTemp": null,
+   "maxOperatingTemp": null, "protectionDegree": null,
+   "warrantyYears": null
+ }]
+}
+
+Se o documento não permitir identificar modelos distintos, devolva
+listas vazias. Não crie modelos por interpolação ou intervalo.
+''';
+
+    final response = await model.generateContent([
+      Content.multi([
+        const TextPart(prompt),
+        DataPart('application/pdf', bytes),
+      ]),
+    ]);
+
+    final responseText = response.text?.trim();
+    if (responseText == null || responseText.isEmpty) {
+      throw const FormatException('A IA não retornou dados.');
+    }
+    final jsonText = responseText
+        .replaceAll(RegExp(r'^\s*\x60\x60\x60(?:json)?\s*'), '')
+        .replaceAll(RegExp(r'\s*\x60\x60\x60\s*$'), '');
+    final decoded = jsonDecode(jsonText);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('A IA retornou um JSON inesperado.');
+    }
+    final result = AiExtractionResultModel.fromJson(decoded);
+    if (result.modules.isEmpty && result.inverters.isEmpty) {
+      throw const FormatException(
+        'Nenhum módulo ou inversor foi identificado no PDF.',
+      );
+    }
+    return result;
   }
 }
