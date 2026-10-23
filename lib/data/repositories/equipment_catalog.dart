@@ -10,7 +10,7 @@ class EquipmentCatalog {
   EquipmentCatalog(this._isar);
 
   static String normalize(String value) =>
-      value.trim().replaceAll(RegExp(r'\\s+'), ' ').toLowerCase();
+      value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
 
   static String key(String manufacturer, String model) =>
       '${normalize(manufacturer)}::${normalize(model)}';

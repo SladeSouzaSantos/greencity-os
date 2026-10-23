@@ -107,7 +107,7 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
 
     final response = await model.generateContent([
       Content.multi([
-        const TextPart(prompt),
+        TextPart(prompt),
         DataPart('application/pdf', bytes),
       ]),
     ]);

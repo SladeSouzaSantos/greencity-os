@@ -728,7 +728,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     double number(String key) =>
         double.tryParse(_ctrl[key]!.text.trim().replaceAll(',', '.')) ?? 0;
     int integer(String key) =>
-        int.tryParse(_ctrl[key]!.text.trim()) ?? 0;
+        double.tryParse(_ctrl[key]!.text.trim().replaceAll(',', '.'))
+            ?.toInt() ?? 0;
 
     if (type == 'inversor') {
       final minVoltage = number('minMpptVolts');
@@ -843,6 +844,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   InverterType _parseInverterType(String type) {
     final lower = type.toLowerCase();
     if (lower.contains('micro')) return InverterType.microInverter;
+    if (lower.contains('optim')) return InverterType.optimizer;
     return InverterType.string;
   }
 
