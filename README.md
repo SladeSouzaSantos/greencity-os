@@ -254,3 +254,63 @@ Se uma importação falhar, confirme o endpoint local com
 no `/api/chat`. Se ambos funcionarem, avalie `ollama ps`, memória e
 logs locais durante a importação. O modo Ollama não usa OpenRouter
 mesmo em caso de erro.
+
+
+## Roteador de IA multicloud — extração de datasheets
+
+Ative `AI_PROVIDER=auto` no `.env` local. A ordem de prioridade, sem
+paralelismo e sem ciclos, é:
+
+1. OpenRouter (somente modelos `:free` já validados pela política do app)
+2. Google Gemini (PDF nativo)
+3. Groq (texto PyMuPDF)
+4. Mistral AI (texto PyMuPDF)
+5. Cloudflare Workers AI (texto PyMuPDF)
+6. Cohere (texto PyMuPDF)
+
+O OpenRouter é consultado primeiro em `GET /api/v1/key` para conferir
+`free_model_daily_requests.remaining` e `limit_remaining`. Uma
+resposta zero pula para Gemini **sem enviar o PDF ao OpenRouter**.
+Essa consulta **não garante** que não haverá limitação por minuto ou
+falha do modelo: HTTP 402/429/5xx durante a inferência também pode levar
+ao provedor seguinte. Quando o endpoint de quota não responde, o app
+tenta a chamada real, pois a ausência de informação não comprova
+limite esgotado.
+
+Somente provedores com credenciais configuradas são tentados.
+`AI_CLOUD_FALLBACK_ENABLED=true` autoriza o envio sequencial do mesmo
+documento aos provedores habilitados; `false` interrompe após a
+primeira falha. Falhas de requisição inválida (HTTP 400/413/422) e
+arquivo PDF inválido não disparam retransmissões. Erros de
+autenticação/timeout/cota/indisponibilidade de provedores podem ser
+tratados como indisponibilidade da opção e avançam na sequência.
+
+`AI_CLOUD_TIMEOUT_SECONDS=180` aplica o timeout de resposta **por
+provedor**, não ao fluxo completo. Se todos atingirem timeout, o total
+poderá ser elevado. APIs podem contabilizar requisições mesmo quando
+o cliente recebe timeout; revise os limites do plano e configure
+orçamentos adequados. Os modelos configurados para outros provedores
+NÃO são necessariamente gratuitos em todas as contas. Confirme no
+painel de cada provedor o plano free/trial e o bloqueio de cobrança.
+
+Os logs locais do Flutter incluem:
+`[AI Router] provider=...; evento=preflight/tentativa/selecionado/
+fallback/ignorado/sucesso; modelo=...; tempo_ms=...; http=...;
+motivo=...; tokens_entrada=...; tokens_saida=...`
+Quando a API não retorna tokens, o campo aparece como `-`.
+O código não imprime prompts, documentos, resposta da IA ou chaves.
+
+**Privacidade e implantação:** os dados do PDF seguem para cada API
+realmente utilizada na sequência, conforme a configuração habilitada.
+O usuário deve usar apenas documentos que tenha autorização para enviar.
+O `.env` é um arquivo local de desenvolvimento; em builds Flutter
+ele pode ser extraído do pacote. Em produção, mova credenciais e
+chamadas HTTP para um backend autenticado, com rate limiting e
+controle de cotas.
+
+**Compatibilidade:** `AI_PROVIDER=ollama` mantém apenas inferência
+local, sem fallback; `AI_PROVIDER=openrouter` mantém a extração
+anterior exclusiva do OpenRouter. Se `AI_PROVIDER` não for definido,
+a configuração anterior `OLLAMA_ENABLED=true/false` continua válida.
+Para usar `auto`, basta acrescentar `AI_PROVIDER=auto`, mesmo que
+`OLLAMA_ENABLED=true` esteja presente no `.env`.
