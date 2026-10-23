@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../../data/models/ai_extraction_result_model.dart';
+import 'openrouter_free_model_policy.dart';
 
 /// Envia PDFs escolhidos pelo usuário ao OpenRouter.
 /// Usa uma instância Dio própria, SEM LogInterceptor, para nunca registrar
@@ -12,19 +13,21 @@ import '../../data/models/ai_extraction_result_model.dart';
 class OpenRouterDatasheetService {
   static const endpoint =
       'https://openrouter.ai/api/v1/chat/completions';
-  static const defaultModel = 'google/gemini-3.8-flash';
+  static const defaultModel = OpenRouterFreeModelPolicy.defaultPrimary;
   static const defaultPdfEngine = 'cloudflare-ai';
   static const maxPdfBytes = 10 * 1024 * 1024;
 
   final Dio _dio;
   final String? _keyOverride;
   final String? _modelOverride;
+  final String? _fallbackModelsOverride;
   final String? _pdfEngineOverride;
 
   OpenRouterDatasheetService({
     Dio? dio,
     String? apiKey,
     String? model,
+    String? fallbackModels,
     String? pdfEngine,
   })  : _dio = dio ??
             Dio(BaseOptions(
@@ -35,6 +38,7 @@ class OpenRouterDatasheetService {
             )),
         _keyOverride = apiKey,
         _modelOverride = model,
+        _fallbackModelsOverride = fallbackModels,
         _pdfEngineOverride = pdfEngine;
 
   String get _apiKey {
@@ -47,10 +51,11 @@ class OpenRouterDatasheetService {
     return key;
   }
 
-  String get _model {
-    final model = (_modelOverride ?? dotenv.env['OPENROUTER_MODEL'])?.trim();
-    return model == null || model.isEmpty ? defaultModel : model;
-  }
+  List<String> get _models => OpenRouterFreeModelPolicy.resolve(
+        primary: _modelOverride ?? dotenv.env['OPENROUTER_MODEL'],
+        fallbacks: _fallbackModelsOverride ??
+            dotenv.env['OPENROUTER_FALLBACK_MODELS'],
+      );
 
   String get _pdfEngine {
     final engine =
@@ -58,9 +63,10 @@ class OpenRouterDatasheetService {
     final chosen = engine == null || engine.isEmpty
         ? defaultPdfEngine
         : engine;
-    if (!const {'cloudflare-ai', 'native', 'mistral-ocr'}.contains(chosen)) {
+    if (!const {'cloudflare-ai', 'native'}.contains(chosen)) {
       throw StateError(
-        'OPENROUTER_PDF_ENGINE inválido. Use cloudflare-ai, native ou mistral-ocr.',
+        'Para evitar cobrança adicional, use cloudflare-ai (gratuito) '
+        'ou native com um modelo :free. mistral-ocr é pago.',
       );
     }
     return chosen;
@@ -134,51 +140,108 @@ Estrutura:
 Se o documento não permitir identificar modelos distintos, devolva
 listas vazias. Não crie modelos por interpolação ou intervalo.
 ''';
+    final models = _models; // Rejeita modelos pagos ANTES de qualquer HTTP.
     final key = _apiKey;
+    final engine = _pdfEngine;
+    final message = <String, dynamic>{
+      'role': 'user',
+      'content': [
+        {'type': 'text', 'text': prompt},
+        {
+          'type': 'file',
+          'file': {
+            'filename': file.uri.pathSegments.last,
+            'file_data': 'data:application/pdf;base64,${base64Encode(bytes)}',
+          },
+        },
+      ],
+    };
+
+    final response = await _request(
+      models: models,
+      engine: engine,
+      key: key,
+      message: message,
+    );
+    try {
+      return parseCompletion(response);
+    } on FormatException {
+      // O fallback do OpenRouter só lida com falhas dos provedores.
+      // Um HTTP 200 com JSON inválido não ativa esse fallback.
+      // Repetimos UMA ÚNICA VEZ com o próximo modelo gratuito.
+      if (models.length < 2) rethrow;
+      final retry = await _request(
+        models: models.skip(1).toList(),
+        engine: engine,
+        key: key,
+        message: message,
+      );
+      return parseCompletion(retry);
+    }
+  }
+
+  Future<Map<String, dynamic>> _request({
+    required List<String> models,
+    required String engine,
+    required String key,
+    required Map<String, dynamic> message,
+    bool includeResponseFormat = true,
+  }) async {
     try {
       final response = await _dio.post<dynamic>(
         endpoint,
         data: {
-          'model': _model,
+          'model': models.first,
+          'models': models,
           'temperature': 0.1,
-          'response_format': {'type': 'json_object'},
+          'max_tokens': 8192,
+          if (includeResponseFormat)
+            'response_format': {'type': 'json_object'},
           'plugins': [
             {
               'id': 'file-parser',
-              'pdf': {'engine': _pdfEngine},
+              'pdf': {'engine': engine},
             },
           ],
-          'messages': [
-            {
-              'role': 'user',
-              'content': [
-                {'type': 'text', 'text': prompt},
-                {
-                  'type': 'file',
-                  'file': {
-                    'filename': file.uri.pathSegments.last,
-                    'file_data': 'data:application/pdf;base64,${base64Encode(bytes)}',
-                  },
-                },
-              ],
-            },
-          ],
+          'messages': [message],
         },
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $key',
-            'Content-Type': 'application/json',
-            'X-Title': 'GreenCity OS',
-          },
-        ),
+        options: Options(headers: {
+          'Authorization': 'Bearer $key',
+          'Content-Type': 'application/json',
+          'X-Title': 'GreenCity OS',
+        }),
       );
-      final json = _asMap(response.data);
-      return parseCompletion(json);
+      return _asMap(response.data);
     } on DioException catch (error) {
-      // Nunca exibir error.toString() nem dados da resposta:
-      // alguns SDKs incluem URL, headers ou conteúdo sensível.
+      // Alguns modelos :free podem não suportar response_format=json_object.
+      // Reenvia a requisição sem esse parâmetro somente quando o OpenRouter
+      // confirmar ESSA incompatibilidade. Erros 400 de PDF/schema não
+      // são corrigidos por troca de modelo, portanto não geram loop.
+      if (includeResponseFormat && _unsupportedResponseFormat(error)) {
+        return _request(
+          models: models,
+          engine: engine,
+          key: key,
+          message: message,
+          includeResponseFormat: false,
+        );
+      }
+      // Nunca usar error.toString() porque Dio inclui RequestOptions.
       throw StateError(_friendlyError(error));
     }
+  }
+
+  static bool _unsupportedResponseFormat(DioException error) {
+    if (error.response?.statusCode != 400) return false;
+    final data = error.response?.data;
+    if (data is! Map) return false;
+    final details = data['error'];
+    if (details is! Map || details['message'] is! String) return false;
+    final message = (details['message'] as String).toLowerCase();
+    return message.contains('response_format') ||
+        (message.contains('json') &&
+            (message.contains('not support') ||
+             message.contains('unsupported')));
   }
 
   static Map<String, dynamic> _asMap(dynamic value) {
@@ -246,12 +309,41 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
     return parsed;
   }
 
+  static String _reason400(DioException error) {
+    final data = error.response?.data;
+    if (data is Map && data['error'] is Map) {
+      final details = data['error'] as Map;
+      final rawMessage = details['message'];
+      if (rawMessage is String) {
+        final message = rawMessage.toLowerCase();
+        if (message.contains('pdf') || message.contains('file-parser') ||
+            message.contains('cloudflare-ai')) {
+          return 'Confira o PDF e o motor OPENROUTER_PDF_ENGINE.';
+        }
+        if (message.contains('response_format') ||
+            message.contains('structured output') ||
+            message.contains('json')) {
+          return 'O modelo não aceita os parâmetros de saída JSON.';
+        }
+        if (message.contains('model')) {
+          return 'Confira os modelos gratuitos configurados.';
+        }
+        if (message.contains('context') || message.contains('token')) {
+          return 'O documento ou a resposta ultrapassou o limite do modelo.';
+        }
+      }
+    }
+    return 'Requisição inválida; verifique o PDF, o modelo e o parser. '
+        'Veja a causa detalhada no painel Activity do OpenRouter.';
+  }
+
   static String _friendlyError(DioException error) {
     final status = error.response?.statusCode;
     switch (status) {
       case 400:
       case 422:
-        return 'OpenRouter rejeitou a requisição (HTTP $status). Confira o modelo e o motor de leitura PDF.';
+        return 'OpenRouter rejeitou a requisição (HTTP $status). '
+            '${_reason400(error)}';
       case 401:
         return 'Chave OPENROUTER_API_KEY inválida ou revogada (HTTP 401).';
       case 402:
