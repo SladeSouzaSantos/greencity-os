@@ -265,6 +265,10 @@ void main() {
         CloudAiProvider.groq: 'test-key',
         CloudAiProvider.mistral: 'test-key',
       },
+      models: {
+        CloudAiProvider.groq: 'test-model',
+        CloudAiProvider.mistral: 'test-model',
+      },
       pdfTextReader: (_) async {
         pdfReads++;
         return 'Jetion JT690 data sheet: 690 W nominal power.';
