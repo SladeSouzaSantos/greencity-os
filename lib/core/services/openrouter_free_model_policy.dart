@@ -21,7 +21,7 @@ class OpenRouterFreeModelPolicy {
         .split(',')
         .map((x) => x.trim())
         .where((x) => x.isNotEmpty);
-    final models = <String>[main, ...backups].toSet().toList();
+    final models = <String>{main, ...backups}.toList();
     if (models.length > 4) {
       throw StateError('Configure no máximo quatro modelos gratuitos.');
     }
