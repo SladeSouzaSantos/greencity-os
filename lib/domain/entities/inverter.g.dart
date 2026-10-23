@@ -104,51 +104,52 @@ const InverterSchema = CollectionSchema(
       name: r'modelName',
       type: IsarType.string,
     ),
-    r'mpptCount': PropertySchema(
+    r'mpptConfigurationJson': PropertySchema(
       id: 17,
+      name: r'mpptConfigurationJson',
+      type: IsarType.string,
+    ),
+    r'mpptCount': PropertySchema(
+      id: 18,
       name: r'mpptCount',
       type: IsarType.long,
     ),
     r'nominalPowerKw': PropertySchema(
-      id: 18,
+      id: 19,
       name: r'nominalPowerKw',
       type: IsarType.double,
     ),
     r'nominalVoltageAc': PropertySchema(
-      id: 19,
+      id: 20,
       name: r'nominalVoltageAc',
       type: IsarType.double,
     ),
     r'nominalVoltageDc': PropertySchema(
-      id: 20,
+      id: 21,
       name: r'nominalVoltageDc',
       type: IsarType.double,
     ),
     r'protectionDegree': PropertySchema(
-      id: 21,
+      id: 22,
       name: r'protectionDegree',
       type: IsarType.string,
     ),
     r'startVoltage': PropertySchema(
-      id: 22,
+      id: 23,
       name: r'startVoltage',
       type: IsarType.double,
     ),
     r'warrantyYears': PropertySchema(
-      id: 23,
+      id: 24,
       name: r'warrantyYears',
       type: IsarType.long,
     ),
     r'weight': PropertySchema(
-      id: 24,
+      id: 25,
       name: r'weight',
       type: IsarType.double,
     ),
-    r'mpptConfigurationJson': PropertySchema(
-      id: 25,
-      name: r'mpptConfigurationJson',
-      type: IsarType.string,
-    )
+
   },
   estimateSize: _inverterEstimateSize,
   serialize: _inverterSerialize,
@@ -217,15 +218,15 @@ void _inverterSerialize(
   writer.writeDouble(offsets[14], object.minMpptVoltage);
   writer.writeDouble(offsets[15], object.minOperatingTemp);
   writer.writeString(offsets[16], object.modelName);
-  writer.writeLong(offsets[17], object.mpptCount);
-  writer.writeDouble(offsets[18], object.nominalPowerKw);
-  writer.writeDouble(offsets[19], object.nominalVoltageAc);
-  writer.writeDouble(offsets[20], object.nominalVoltageDc);
-  writer.writeString(offsets[21], object.protectionDegree);
-  writer.writeDouble(offsets[22], object.startVoltage);
-  writer.writeLong(offsets[23], object.warrantyYears);
-  writer.writeDouble(offsets[24], object.weight);
-  writer.writeString(offsets[25], object.mpptConfigurationJson);
+  writer.writeString(offsets[17], object.mpptConfigurationJson);
+  writer.writeLong(offsets[18], object.mpptCount);
+  writer.writeDouble(offsets[19], object.nominalPowerKw);
+  writer.writeDouble(offsets[20], object.nominalVoltageAc);
+  writer.writeDouble(offsets[21], object.nominalVoltageDc);
+  writer.writeString(offsets[22], object.protectionDegree);
+  writer.writeDouble(offsets[23], object.startVoltage);
+  writer.writeLong(offsets[24], object.warrantyYears);
+  writer.writeDouble(offsets[25], object.weight);
 }
 
 Inverter _inverterDeserialize(
@@ -256,15 +257,15 @@ Inverter _inverterDeserialize(
     minMpptVoltage: reader.readDouble(offsets[14]),
     minOperatingTemp: reader.readDouble(offsets[15]),
     modelName: reader.readString(offsets[16]),
-    mpptCount: reader.readLong(offsets[17]),
-    nominalPowerKw: reader.readDouble(offsets[18]),
-    nominalVoltageAc: reader.readDouble(offsets[19]),
-    nominalVoltageDc: reader.readDouble(offsets[20]),
-    protectionDegree: reader.readString(offsets[21]),
-    startVoltage: reader.readDouble(offsets[22]),
-    warrantyYears: reader.readLongOrNull(offsets[23]) ?? 10,
-    weight: reader.readDouble(offsets[24]),
-    mpptConfigurationJson: reader.readStringOrNull(offsets[25]),
+    mpptCount: reader.readLong(offsets[18]),
+    nominalPowerKw: reader.readDouble(offsets[19]),
+    nominalVoltageAc: reader.readDouble(offsets[20]),
+    nominalVoltageDc: reader.readDouble(offsets[21]),
+    protectionDegree: reader.readString(offsets[22]),
+    startVoltage: reader.readDouble(offsets[23]),
+    warrantyYears: reader.readLongOrNull(offsets[24]) ?? 10,
+    weight: reader.readDouble(offsets[25]),
+    mpptConfigurationJson: reader.readStringOrNull(offsets[17]),
   );
   object.id = id;
   return object;
@@ -316,23 +317,23 @@ P _inverterDeserializeProp<P>(
     case 16:
       return (reader.readString(offset)) as P;
     case 17:
-      return (reader.readLong(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 18:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readLong(offset)) as P;
     case 19:
       return (reader.readDouble(offset)) as P;
     case 20:
       return (reader.readDouble(offset)) as P;
     case 21:
-      return (reader.readString(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     case 22:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 23:
-      return (reader.readLongOrNull(offset) ?? 10) as P;
-    case 24:
       return (reader.readDouble(offset)) as P;
+    case 24:
+      return (reader.readLongOrNull(offset) ?? 10) as P;
     case 25:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
