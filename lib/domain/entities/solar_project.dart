@@ -14,6 +14,8 @@ class SolarProject {
   List<SolarSystem> systems;
   SolarClimate? climate;
   Hsp? referenceHspHorizontal;
+  String? hspDataSource;
+  String? hspTranspositionModel;
 
   SolarProject({
     required this.clientName,

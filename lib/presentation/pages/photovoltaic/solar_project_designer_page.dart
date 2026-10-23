@@ -5,10 +5,10 @@ import '../../../core/injection/injection.dart';
 import '../../../domain/entities/inverter.dart';
 import '../../../domain/entities/pv_module.dart';
 import '../../../domain/entities/solar_array.dart';
-import '../../../domain/entities/solar_engine_result.dart';
 import '../../../domain/entities/solar_project.dart';
 import '../../../domain/entities/solar_scenario.dart';
 import '../../../domain/entities/solar_system.dart';
+import '../../../domain/services/solar_reference_service.dart';
 import '../../../domain/enums/cell_technology.dart';
 import '../../bloc/solar_hsp_bloc.dart';
 import '../../bloc/solar_hsp_state.dart';
@@ -27,7 +27,6 @@ class SolarProjectDesignerPage extends StatefulWidget {
 }
 
 class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
-  SolarEngineResult? lastCalculationResult;
   List<SolarScenario> configuredScenarios = [];
   List<SolarSystem> systems = [];
   List<PvModule> allModules = [];
@@ -178,7 +177,6 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
     // 1. Validamos se existe pelo menos um sistema com módulos
     if (systems.isEmpty || systems.every((s) => s.arrays.isEmpty)) {
       setState(() {
-        lastCalculationResult = null;
       });
       
       ScaffoldMessenger.of(context).showSnackBar(
@@ -308,27 +306,19 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
       // O listener observa as mudanças de estado
       listener: (context, state) {
         if (state is SolarHspSuccess) {
-          final isPlaceholder = state.result.results.any((r) => r.id == "placeholder");
-
-          if (!isPlaceholder) {
-            setState(() {
-              lastCalculationResult = state.result;
-
-              // --- VINCULANDO OS RESULTADOS AOS ARRAYS ---
-              for (var system in systems) {
-                for (var array in system.arrays) {
-                  // Procura o resultado que tem o mesmo ID do array
-                  final resultForThisArray = state.result.results.firstWhere(
-                    (r) => r.id == array.solarScenario.id,
-                    orElse: () => throw Exception("Resultado não encontrado para o array ${array.solarScenario.id}"),
-                  );
-                  
-                  // Injeta o resultado (SolarScenarioResult) dentro do array
-                  array.solarScenarioResult = resultForThisArray;
+          setState(() {
+            SolarReferenceService.updateProjectReference(widget.project, state.result);
+            final isPlaceholder = state.result.results.any((r) => r.id == 'placeholder');
+            if (!isPlaceholder) {
+              // Um resultado atrasado nunca deve substituir dados de outro array.
+              final byId = {for (final result in state.result.results) result.id: result};
+              for (final system in systems) {
+                for (final array in system.arrays) {
+                  array.solarScenarioResult = byId[array.solarScenario.id];
                 }
               }
-            });
-          }
+            }
+          });
         }
       },
       child: Scaffold(
@@ -344,7 +334,6 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
               // Agora o lastCalculationResult que o Listener salvou é passado para cá
               SizingSuggestionCard(
                 project: widget.project, 
-                solarEngine: lastCalculationResult, 
                 onDetailsTap: () {},
               ),
 

@@ -15,16 +15,22 @@ class CalculateHspEvent {
 @injectable // Também registramos o BLoC para ser injetado!
 class SolarHspBloc extends Bloc<CalculateHspEvent, SolarHspState> {
   final CalculatePeakSunHours calculateUseCase;
+  int _latestRequestId = 0;
 
   SolarHspBloc(this.calculateUseCase) : super(SolarHspInitial()) {
     on<CalculateHspEvent>((event, emit) async {
+      final requestId = ++_latestRequestId;
       emit(SolarHspLoading());
 
       try {
         final result = await calculateUseCase(event.lat, event.lon, event.items);
-        emit(SolarHspSuccess(result));
+        if (requestId == _latestRequestId && !emit.isDone) {
+          emit(SolarHspSuccess(result));
+        }
       } catch (e) {
-        emit(SolarHspError(e.toString()));
+        if (requestId == _latestRequestId && !emit.isDone) {
+          emit(SolarHspError(e.toString()));
+        }
       }
     });
   }

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../../domain/entities/hsp.dart';
 import '../../../../domain/entities/solar_climate.dart';
-import '../../../../domain/entities/solar_engine_result.dart';
 import '../../../../domain/entities/solar_project.dart';
 import '../../../../domain/services/sizing_service.dart';
 import '../../../bloc/solar_hsp_bloc.dart';
@@ -12,13 +10,11 @@ import '../../../bloc/solar_hsp_state.dart';
 class SizingSuggestionCard extends StatelessWidget {
   final SolarProject project;
   final VoidCallback onDetailsTap;
-  final SolarEngineResult? solarEngine;
 
   const SizingSuggestionCard({
     super.key, 
     required this.project, 
     required this.onDetailsTap,
-    this.solarEngine
   });
 
   Widget _buildGenerationProgress() {
@@ -108,7 +104,7 @@ class SizingSuggestionCard extends StatelessWidget {
                         const Icon(Icons.wb_sunny, size: 14, color: Colors.orange),
                         const SizedBox(width: 4),
                         Text(
-                          "HSP: ${hsp.annualAverage.toStringAsFixed(2)}",
+                          "HSP horizontal (GHI): ${hsp.annualAverage.toStringAsFixed(2)}",
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
                         ),
                       ],
@@ -164,7 +160,9 @@ class SizingSuggestionCard extends StatelessWidget {
               const Divider(),
               Text("Cidade: ${project.city} - ${project.state}"),
               const SizedBox(height: 10),
-              Text("Radiação média anual: ${hsp?.annualAverage.toStringAsFixed(2)} kWh/m²/dia"),
+              Text("HSP horizontal (GHI): ${hsp?.annualAverage.toStringAsFixed(2)} kWh/m²/dia"),
+              Text("Fonte: ${project.hspDataSource ?? 'não informada pela API'}"),
+              Text("Transposição dos arranjos: ${project.hspTranspositionModel ?? 'não informada'}"),
               Text("Temperatura máxima anual: ${_calculateYearlyMaxTemp(climate).toStringAsFixed(1)} °C"),
               Text("Temperatura média anual: ${_calculateAvgTemp(climate).toStringAsFixed(1)} °C"),
               Text("Temperatura mínima anual: ${_calculateYearlyMinTemp(climate).toStringAsFixed(1)} °C"),
@@ -207,7 +205,13 @@ class SizingSuggestionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<SolarHspBloc, SolarHspState>(
       builder: (context, state) {
-        if (state is SolarHspLoading) {
+        // A referência é gerenciada pelo Listener da página, nunca pelo build.
+        // Recalcular um módulo inclinado não altera o GHI horizontal da cidade.
+        final reference = project.referenceHspHorizontal;
+        if (reference == null) {
+          if (state is SolarHspError) {
+            return Text("Erro: ${state.message}", style: const TextStyle(color: Colors.red));
+          }
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(20.0),
@@ -216,43 +220,23 @@ class SizingSuggestionCard extends StatelessWidget {
           );
         }
 
-        if (state is SolarHspSuccess) {
-          if (state.result.results.isNotEmpty) {
-            final firstResult = state.result.results.first;
-            project.referenceHspHorizontal = Hsp(
-              annualAverage: firstResult.averageHspReal,
-              monthlyValues: firstResult.monthlyHspReal,
-            );
-            project.climate = state.result.climate;
-          }
+        final powerMono = SizingService.calculateSuggestedPower(
+          targetConsumption: project.effectiveConsumption,
+          averageHsp: reference.annualAverage,
+          isBifacial: false,
+        );
+        final powerBifi = SizingService.calculateSuggestedPower(
+          targetConsumption: project.effectiveConsumption,
+          averageHsp: reference.annualAverage,
+          isBifacial: true,
+        );
 
-          final hsp = state.result.results.isNotEmpty ? state.result.results.first.averageHspReal : 0.0;
-
-          final powerMono = SizingService.calculateSuggestedPower(
-            targetConsumption: project.effectiveConsumption,
-            averageHsp: hsp,
-            isBifacial: false,
-          );
-
-          final powerBifi = SizingService.calculateSuggestedPower(
-            targetConsumption: project.effectiveConsumption,
-            averageHsp: hsp,
-            isBifacial: true,
-          );
-
-          return Column(
-            children: [
-              _buildSuggestionCard(context, powerMono, powerBifi),
-              _buildGenerationProgress(), 
-            ],
-          );
-        }
-
-        if (state is SolarHspError) {
-          return Text("Erro: ${state.message}", style: const TextStyle(color: Colors.red));
-        }
-
-        return const Text("Iniciando consulta de radiação...");
+        return Column(
+          children: [
+            _buildSuggestionCard(context, powerMono, powerBifi),
+            _buildGenerationProgress(),
+          ],
+        );
       },
     );
   }

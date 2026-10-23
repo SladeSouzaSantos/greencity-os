@@ -9,6 +9,8 @@ class SizingService {
     required double averageHsp,
     bool isBifacial = false,
   }) {
+    if (targetConsumption <= 0 || averageHsp <= 0) return 0.0;
+
     // Produção mensal de 1W instalado
     // 1W * HSP * 30 dias * PR
     double productionPerWatt = 1 * averageHsp * 30 * _performanceRatio;
