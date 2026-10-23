@@ -28,6 +28,19 @@ void main() {
     expect(AiInverterRefinement.parsedPdfText({'choices': []}), isNull);
   });
 
+  test('aceita anotações de PDF curtas com dados úteis', () {
+    final content = AiInverterRefinement.parsedPdfText({
+      'choices': [
+        {'message': {'annotations': [
+          {'type': 'file', 'file': {'content': [
+            {'type': 'text', 'text': '| Operating Temperature | -40°C-+85°C |'},
+          ]}},
+        ]}},
+      ]
+    });
+    expect(content, contains('-40°C-+85°C'));
+  });
+
   test('preserva o início e fim de OCR com mais de 18 mil caracteres', () {
     final source = 'CABECALHO_STC\n${List.filled(20000, 'x').join()}\nTABELA_FINAL';
     final text = AiInverterRefinement.parsedPdfText({
