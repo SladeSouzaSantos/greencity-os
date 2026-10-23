@@ -31,6 +31,7 @@ Operating Temperature -40°C-+85°C
     model: model ?? 'qwen3.8:27b',
     baseUrl: baseUrl ?? 'http://127.0.0.1:11434',
     numCtx: 16384,
+    receiveTimeoutSeconds: 180,
   );
 
   Map<String, dynamic> chat(Map<String, dynamic> payload) => {
@@ -145,4 +146,82 @@ Operating Temperature -40°C-+85°C
     expect(calls, greaterThanOrEqualTo(2));
     expect(result.modules.first.powerWp, 700);
   });
+  test('configura timeout do HTTP separadamente do modelo', () async {
+    final dio = Dio();
+    RequestOptions? captured;
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      captured = request;
+      handler.resolve(Response(
+        requestOptions: request,
+        statusCode: 200,
+        data: chat({'modules': [
+          {'manufacturer': 'Jetion', 'modelName': 'JT700', 'powerWp': 700},
+        ], 'inverters': []}),
+      ));
+    }));
+    await local(dio).extractEquipmentData(pdf.path);
+    expect(captured, isNotNull);
+    expect(captured!.receiveTimeout, const Duration(seconds: 180));
+    expect((captured!.data as Map)['model'], 'qwen3.8:27b');
+  });
+
+  test('timeout de leitura é informado como timeout_resposta', () async {
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      handler.reject(DioException(
+        requestOptions: request,
+        type: DioExceptionType.receiveTimeout,
+      ));
+    }));
+    await expectLater(
+      local(dio).extractEquipmentData(pdf.path),
+      throwsA(isA<StateError>().having(
+        (e) => e.message.toString(), 'diagnóstico',
+        allOf(contains('timeout_resposta'), contains('180 s')),
+      )),
+    );
+  });
+
+  test('resposta sem JSON distingue formato de problema de conexão', () async {
+    final dio = Dio();
+    var calls = 0;
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      calls++;
+      handler.resolve(Response(
+        requestOptions: request,
+        statusCode: 200,
+        data: {'message': {'content': 'nenhum json aqui'}},
+      ));
+    }));
+    await expectLater(local(dio).extractEquipmentData(pdf.path),
+      throwsA(isA<FormatException>().having(
+        (e) => e.message.toString(), 'erro',
+        contains('resposta_json_invalida'),
+      )),
+    );
+    expect(calls, 2, reason: 'Só recuperação local, nunca OpenRouter');
+  });
+
+  test('HTTP 500 de memória é distinguido de falha genérica', () async {
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      handler.reject(DioException(
+        requestOptions: request,
+        response: Response(
+          requestOptions: request,
+          statusCode: 500,
+          data: {'error': 'out of memory allocating model'},
+        ),
+        type: DioExceptionType.badResponse,
+      ));
+    }));
+    await expectLater(
+      local(dio).extractEquipmentData(pdf.path),
+      throwsA(isA<StateError>().having(
+        (e) => e.message.toString(), 'erro',
+        contains('memoria_insuficiente'),
+      )),
+    );
+  });
+
 }

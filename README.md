@@ -187,9 +187,10 @@ pela configuração do `.env`:
 ```dotenv
 # true = Ollama local; false = OpenRouter (padrão)
 OLLAMA_ENABLED=true
-OLLAMA_MODEL=qwen3.8:27b
+OLLAMA_MODEL=qwen2.5:3b
 OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_NUM_CTX=16384
+OLLAMA_NUM_CTX=4096
+OLLAMA_RECEIVE_TIMEOUT_SECONDS=900
 OLLAMA_PYTHON=python
 ```
 
@@ -210,9 +211,9 @@ flutter run -d windows
 ```
 
 Se a API local estiver indisponível, execute `ollama serve` em um terminal.
-Os modelos disponíveis dependem de seu Ollama; comece por `qwen3.8:27b`
-ou `nimble:9b`. Eles podem exigir RAM/VRAM e levar mais tempo que um
-modelo na nuvem.
+Os modelos disponíveis dependem do Ollama instalado. Para máquinas com
+4 GB de VRAM, comece por `qwen2.5:3b` e contexto 4096. Os modelos 9B/27B
+podem ficar predominantemente na CPU e levar muito mais tempo.
 
 O script `tools/ollama_pdf_extract.py` extrai texto e tabelas
 com PyMuPDF, passa-os ao endpoint local `/api/chat` e recebe JSON estruturado.
@@ -229,3 +230,27 @@ Com `OLLAMA_ENABLED=true`, o endereço é intencionalmente restrito a
 O JSON da IA não é automaticamente confiável: revise os campos antes
 de salvar ou dimensionar. Nenhuma dependência de Python é exigida
 quando `OLLAMA_ENABLED=false`.
+
+### Diagnóstico de falhas locais
+
+A chamada `POST /api/chat` reporta códigos amigáveis como
+`conexao_recusada`, `conexao_interrompida`, `timeout_conexao`,
+`timeout_envio`, `timeout_resposta`, `modelo_nao_encontrado`,
+`memoria_insuficiente`, `contexto_excedido` e `resposta_json_invalida`.
+O diálogo mostra o tempo da tentativa e sugere uma ação adequada.
+A duração inclui carregamento do modelo, avaliação do prompt e geração.
+
+`OLLAMA_RECEIVE_TIMEOUT_SECONDS=900` controla o limite de espera da
+resposta sem streaming (30 a 3600 s). Um `ollama run` curto funcionando
+não garante que o modelo processe um datasheet completo dentro desse
+limite. O console do Flutter registra **somente métricas** (tempo do
+cliente, tempo de carregamento, tokens, tempo de avaliação/geração e
+categoria da falha); não registra conteúdo do PDF, prompts, respostas
+ou credenciais. Respostas bem-sucedidas retornam métricas de execução
+em nanossegundos pela API Ollama.
+
+Se uma importação falhar, confirme o endpoint local com
+`curl.exe http://127.0.0.1:11434/api/version` e uma inferência pequena
+no `/api/chat`. Se ambos funcionarem, avalie `ollama ps`, memória e
+logs locais durante a importação. O modo Ollama não usa OpenRouter
+mesmo em caso de erro.
