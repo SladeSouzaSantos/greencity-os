@@ -6,6 +6,13 @@ class SolarScenarioResult {
   final List<double> monthlyHspReference;
   final String shadowLossPercentage;
 
+  // Campos opcionais disponíveis no detalhamento do HSP Simulator.
+  final double? horizontalHsp;
+  final double? frontalHsp;
+  final double? rearEquivalentHsp;
+  final String? dataSource;
+  final String? transpositionModel;
+
   SolarScenarioResult({
     required this.id,
     required this.averageHspReal,
@@ -13,6 +20,11 @@ class SolarScenarioResult {
     required this.averageHspReference,
     required this.monthlyHspReference,
     required this.shadowLossPercentage,
+    this.horizontalHsp,
+    this.frontalHsp,
+    this.rearEquivalentHsp,
+    this.dataSource,
+    this.transpositionModel,
   });
 
   @override

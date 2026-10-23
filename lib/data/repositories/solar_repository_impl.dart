@@ -18,22 +18,7 @@ class SolarRepositoryImpl implements SolarRepository {
     required double longitude,
     required List<SolarScenario> items,
   }) async {
-    // 1. Convertemos a lista de ENTITIES em uma lista de MAPS (JSON) para a API
-    final itemsPayload = items.map((item) => {
-      'id_placa': item.id,
-      'inclinacao_graus': item.inclination,
-      'azimute_graus': item.azimuth,
-      'albedo_solo': item.albedo,
-      'distancia_centro_modulo_chao': item.distanceToGround,
-      'tecnologia_celula': item.module.cellTechnology.apiKey,
-      'is_bifacial': item.module.isBifacial,
-      if (item.obstacle != null) 'config_obstaculo': {
-        'altura_obstaculo': item.obstacle!.height,
-        'distancia_obstaculo': item.obstacle!.distance,
-        'referencia_azimutal_obstaculo': item.obstacle!.azimuthReference,
-        'largura_obstaculo': item.obstacle!.width,
-      }
-    }).toList();
+    final itemsPayload = items.map(buildItemPayload).toList();
 
     // 2. Chamamos o Data Source
     return await remoteDataSource.getCalculateArray(
@@ -41,6 +26,32 @@ class SolarRepositoryImpl implements SolarRepository {
       longitude: longitude,
       items: itemsPayload,
     );
+  }
+
+  /// Contrato enviado ao HSP Simulator. Dimensões dos módulos em METROS.
+  /// Fonte automática corresponde à opção padrão do dashboard.
+  static Map<String, dynamic> buildItemPayload(SolarScenario item) {
+    return {
+      'id_placa': item.id,
+      'inclinacao_graus': item.inclination,
+      'azimute_graus': item.azimuth,
+      'albedo_solo': item.albedo,
+      'distancia_centro_modulo_chao': item.distanceToGround,
+      'tecnologia_celula': item.module.cellTechnology.apiKey,
+      'is_bifacial': item.module.isBifacial,
+      'comprimento_modulo': item.module.length / 1000.0,
+      'largura_modulo': item.module.width / 1000.0,
+      'orientacao': item.orientation.label,
+      'modelo_transposicao': 'perez',
+      'fonte_dados': 'auto',
+      if (item.obstacle != null)
+        'config_obstaculo': {
+          'altura_obstaculo': item.obstacle!.height,
+          'distancia_obstaculo': item.obstacle!.distance,
+          'referencia_azimutal_obstaculo': item.obstacle!.azimuthReference,
+          'largura_obstaculo': item.obstacle!.width,
+        },
+    };
   }
 
   @override
