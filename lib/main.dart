@@ -5,6 +5,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'data/datasources/solar_seed_data.dart';
+import 'data/datasources/souenergy_verified_seed.dart';
+import 'data/repositories/equipment_catalog.dart';
 import 'domain/entities/inverter.dart';
 import 'domain/entities/pv_module.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -38,6 +40,18 @@ void main() async {
     await seedMarker.writeAsString('initialized', flush: true);
   }
   
+  // Complemento v2 importado uma única vez, preservando dados existentes.
+  final verifiedMarker = File(
+    directory.path + Platform.pathSeparator + '.greencity_souenergy_verified_v2',
+  );
+  if (!await verifiedMarker.exists()) {
+    await EquipmentCatalog(isar).importMany(
+      modules: SouEnergyVerifiedSeed.modules(),
+      inverters: SouEnergyVerifiedSeed.inverters(),
+    );
+    await verifiedMarker.writeAsString('initialized', flush: true);
+  }
+
   runApp(const MyApp());
 }
 
