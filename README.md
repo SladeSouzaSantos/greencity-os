@@ -134,3 +134,46 @@ cadastro duplicado; importar um datasheet com 2+ variantes; conferir IDs
 distintos e valores por modelo; verificar que registros incompletos não são
 incluídos silenciosamente. Não use `git add -A` para incluir arquivos locais
 alheios à correção (Gradle, plugins, .env ou lockfile).
+
+
+### Precisão técnica de extração e limites conhecidos
+
+- Os dados são extraídos pelo OpenRouter e **devem ser conferidos na
+  ficha original** antes do dimensionamento. Uma extração parcial não é
+  evidência de que o datasheet não possui os campos.
+- Potências com unidade explícita W/Wp podem ser convertidas para kW,
+  faixas compostas (por exemplo, 80–560 V / 360 V) separadas e códigos
+  "3/1" identificados como 3 MPPTs / 1 string. Nenhum intervalo é
+  convertido silenciosamente em valor nominal.
+- Se faltarem pelo menos dois parâmetros essenciais do inversor, uma
+  segunda leitura **somente do texto presente em file.annotations**
+  é tentada uma vez. O PDF Base64 não é retransmitido. Na ausência
+  dessas annotations, mantém a extração inicial sem tentar novamente.
+  A segunda inferência usa quota do modelo gratuito.
+- O banco Isar atual guarda somente uma corrente para todos os MPPTs.
+  Quando o datasheet informa correntes distintas (como 20/16/20 A),
+  a prévia mostra o vetor; a importação em lote fica bloqueada e o
+  salvamento individual requer confirmação de que será armazenado o
+  **MENOR** valor (conservador, mas não equivalente ao equipamento real).
+  A persistência individual por MPPT exige evolução futura do esquema.
+- PDF de até 10 MB; acima de 5 MB o aplicativo avisa sobre o acréscimo
+  de aproximadamente 33% do Base64 e oferece cancelamento para que
+  o usuário otimize imagens mantendo a legibilidade das tabelas.
+
+#### Gabaritos públicos usados nos testes
+
+Somente fatos técnicos foram convertidos em testes unitários, sem
+incluir cópias das fichas de terceiros no repositório:
+
+- AUXSOL ASN-(3 a 6)SL-G2, 7 modelos:
+  https://assistencia.souenergy.com.br/docs/download/360
+- Solplanet Série S, 5 modelos:
+  https://assistencia.souenergy.com.br/docs/download/124
+- SolaX X1-Hybrid G4, família monofásica:
+  https://assistencia.souenergy.com.br/docs/download/41
+- Leapton S1X-5K1P-Y / S1X-7.5K1P-Y:
+  https://assistencia.souenergy.com.br/docs/download/299
+
+**Atenção:** diferentes revisões comerciais da mesma família podem
+informar potências CC recomendadas distintas. O extrator deve usar a
+revisão do **PDF selecionado**, nunca substituir seus dados pelos gabaritos.

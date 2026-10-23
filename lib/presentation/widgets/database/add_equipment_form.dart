@@ -310,11 +310,10 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(
-              'Atenção: este inversor tem correntes diferentes por MPPT: ' +
-              (_pendingAiModels.first as AiExtractedInverter)
-                  .mpptInputCurrentsA!.join(' / ') +
-              ' A. O catálogo atual guarda apenas uma corrente e usará '
-              'o MENOR limite por segurança. Revise antes de salvar.',
+              'Atenção: correntes diferentes por MPPT: '
+              '${(_pendingAiModels.first as AiExtractedInverter).mpptInputCurrentsA!.join(' / ')} A. '
+              'O catálogo guarda só uma corrente, usando o MENOR limite '
+              'por segurança. Revise antes de salvar.',
               style: const TextStyle(color: Colors.deepOrange),
             ),
           ),
