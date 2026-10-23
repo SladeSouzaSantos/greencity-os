@@ -205,7 +205,9 @@ class AiExtractedInverter {
     if (manufacturer.trim().toLowerCase() !=
             newer.manufacturer.trim().toLowerCase() ||
         modelName.trim().toLowerCase() !=
-            newer.modelName.trim().toLowerCase()) return this;
+            newer.modelName.trim().toLowerCase()) {
+      return this;
+    }
 
     double p(double old, double candidate) => old > 0 ? old : candidate;
     double? n(double? old, double? candidate) =>

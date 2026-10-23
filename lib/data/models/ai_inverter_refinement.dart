@@ -69,8 +69,8 @@ $sourceText
   static AiExtractionResultModel mergeMissing(
       AiExtractionResultModel initial, AiExtractionResultModel followup) {
     String id(AiExtractedInverter i) =>
-        i.manufacturer.trim().toLowerCase() + '::' +
-        i.modelName.trim().toLowerCase();
+        '${i.manufacturer.trim().toLowerCase()}::'
+        '${i.modelName.trim().toLowerCase()}';
     final corrected = <String, AiExtractedInverter>{
       for (final inv in followup.inverters) id(inv): inv,
     };
