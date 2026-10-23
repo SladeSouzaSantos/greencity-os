@@ -1,4 +1,5 @@
 import '../../domain/entities/inverter.dart';
+import '../../domain/entities/inverter_mppt_configuration.dart';
 import '../../domain/entities/pv_module.dart';
 import '../../domain/enums/cell_technology.dart';
 import '../../domain/enums/grid_connection.dart';
@@ -57,6 +58,10 @@ class AiEquipmentMapper {
     if (value.mpptShortCircuitCurrentsA != null && value.mpptCount != null &&
         value.mpptShortCircuitCurrentsA!.length != value.mpptCount) {
       problems.add('número de correntes Isc não corresponde aos MPPTs');
+    }
+    if (value.totalDcInputs != null && value.mpptCount != null &&
+        value.totalDcInputs! < value.mpptCount!) {
+      problems.add('entradas CC menores que a quantidade de MPPTs');
     }
     if (inverterType(value.inverterType) == null) {
       problems.add('tipo de inversor');
@@ -150,6 +155,17 @@ class AiEquipmentMapper {
       maxEfficiency: efficiency(value.maxEfficiency),
       euroEfficiency: efficiency(value.euroEfficiency),
       mpptCount: value.mpptCount!,
+      mpptConfigurationJson: InverterMpptConfiguration(
+        inputCurrentsA: value.mpptInputCurrentsA,
+        shortCircuitCurrentsA: value.mpptShortCircuitCurrentsA,
+        totalDcInputs: value.totalDcInputs,
+      ).hasDetails
+          ? InverterMpptConfiguration(
+              inputCurrentsA: value.mpptInputCurrentsA,
+              shortCircuitCurrentsA: value.mpptShortCircuitCurrentsA,
+              totalDcInputs: value.totalDcInputs,
+            ).encode()
+          : null,
       maxInputVoltage: value.maxInputVoltage!,
       nominalVoltageDc: value.nominalVoltageDc ?? 0,
       startVoltage: value.startVoltage ?? 0,

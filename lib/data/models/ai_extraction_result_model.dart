@@ -137,6 +137,7 @@ class AiExtractedInverter {
   final double? maxEfficiency;
   final double? euroEfficiency;
   final int? mpptCount;
+  final int? totalDcInputs;
   final double? maxInputVoltage;
   final double? nominalVoltageDc;
   final double? startVoltage;
@@ -166,6 +167,7 @@ class AiExtractedInverter {
     this.maxEfficiency,
     this.euroEfficiency,
     this.mpptCount,
+    this.totalDcInputs,
     this.maxInputVoltage,
     this.nominalVoltageDc,
     this.startVoltage,
@@ -213,6 +215,23 @@ class AiExtractedInverter {
     double? n(double? old, double? candidate) =>
         old != null && old > 0 ? old : candidate;
 
+    int? resolvedMpptCount() {
+      bool matches(int count) {
+        final lists = <List<double>?>[
+          mpptInputCurrentsA ?? newer.mpptInputCurrentsA,
+          mpptShortCircuitCurrentsA ?? newer.mpptShortCircuitCurrentsA,
+        ];
+        return lists.every((list) => list == null || list.length == count);
+      }
+      final prior = mpptCount;
+      final candidate = newer.mpptCount;
+      if (prior != null && prior > 0 && matches(prior)) return prior;
+      if (candidate != null && candidate > 0 && matches(candidate)) {
+        return candidate;
+      }
+      return prior ?? candidate;
+    }
+
     return AiExtractedInverter(
       manufacturer: manufacturer,
       modelName: modelName,
@@ -220,8 +239,8 @@ class AiExtractedInverter {
       maxInputPowerKw: n(maxInputPowerKw, newer.maxInputPowerKw),
       maxEfficiency: n(maxEfficiency, newer.maxEfficiency),
       euroEfficiency: n(euroEfficiency, newer.euroEfficiency),
-      mpptCount: mpptCount != null && mpptCount! > 0 ?
-          mpptCount : newer.mpptCount,
+      mpptCount: resolvedMpptCount(),
+      totalDcInputs: totalDcInputs ?? newer.totalDcInputs,
       maxInputVoltage: n(maxInputVoltage, newer.maxInputVoltage),
       nominalVoltageDc: n(nominalVoltageDc, newer.nominalVoltageDc),
       startVoltage: n(startVoltage, newer.startVoltage),
@@ -288,6 +307,8 @@ class AiExtractedInverter {
       maxEfficiency: _number(json['maxEfficiency'] ?? json['maxEfficiencyPercent']),
       euroEfficiency: _number(json['euroEfficiency'] ?? json['europeanEfficiency']),
       mpptCount: AiNumericValueParser.mpptCount(json['mpptCount'] ?? json['mpptTrackerCount']),
+      totalDcInputs: _integer(json['totalDcInputs'] ?? json['numberOfDcInputs'] ??
+          json['numberOfInputs']),
       maxInputVoltage: _number(json['maxInputVoltage'] ?? json['maxDcVoltage']),
       nominalVoltageDc: _number(json['nominalVoltageDc']) ??
           AiNumericValueParser.nominalFromMpptRange(rawRange),

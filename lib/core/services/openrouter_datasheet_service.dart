@@ -104,8 +104,16 @@ ATENÇÃO A DATASHEETS DE INVERSORES COM TABELAS MULTICOLUNAS:
   de colunas, não para a linha toda: associe o valor somente aos modelos
   cobertos pela célula. MPPT, corrente, peso e dimensões podem variar
   entre os grupos.
-- Quando aparecer "18A/18A" para dois MPPTs, registre mpptCount=2
-  e maxInputCurrentPerMppt=18, NUNCA some as correntes.
+- A linha "Quantidade MPPT" define mpptCount (RASTREADORES).
+  "Número de Entradas do Inversor" define totalDcInputs (CONECTORES):
+  são quantidades distintas. Exemplo AUXSOL ASN-10SL: 2 MPPTs e 3
+  entradas; NUNCA registre mpptCount=3 por causa das entradas.
+- Se o datasheet exibir correntes "32A/16A" para dois MPPTs,
+  registre mpptInputCurrentsA=[32,16] e maxInputCurrentPerMppt=16
+  apenas como compatibilidade conservadora, sem SOMAR as correntes.
+  Para corrente de curto "40A/20A", registre
+  mpptShortCircuitCurrentsA=[40,20] e maxShortCircuitCurrent=20.
+  Não presuma quantos conectores existem em cada rastreador.
 - "Monofásico", "1F/N/PE" e "F+N" são gridConnection=monophasic.
 - Preserve rigorosamente os nomes exatos, incluindo sufixo "-G2",
   e não crie modelos inexistentes por extrapolação.
@@ -145,6 +153,8 @@ Estrutura:
    "isHybrid": null, "nominalPowerKw": null,
    "maxInputPowerKw": null, "maxEfficiency": null,
    "euroEfficiency": null, "mpptCount": null,
+   "totalDcInputs": null, "mpptInputCurrentsA": null,
+   "mpptShortCircuitCurrentsA": null,
    "maxInputVoltage": null, "nominalVoltageDc": null,
    "startVoltage": null, "minMpptVoltage": null,
    "maxMpptVoltage": null, "maxInputCurrentPerMppt": null,

@@ -42,6 +42,21 @@ void main() {
     );
   });
 
+  test('correntes por MPPT aceitam listas e rejeitam valores inválidos', () {
+    expect(EquipmentInputValidator.validate(
+      key: 'mpptCurrents', value: '32/16', isModule: false,
+    ), isNull);
+    expect(EquipmentInputValidator.validate(
+      key: 'mpptIscCurrents', value: '40/20', isModule: false,
+    ), isNull);
+    expect(EquipmentInputValidator.validate(
+      key: 'mpptCurrents', value: '32/abc', isModule: false,
+    ), isNotNull);
+    expect(EquipmentInputValidator.validate(
+      key: 'totalDcInputs', value: '3,5', isModule: false,
+    ), contains('inteiro'));
+  });
+
   test('dimensões e grau de proteção são campos textuais', () {
     expect(
       EquipmentInputValidator.validate(

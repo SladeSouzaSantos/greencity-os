@@ -7,8 +7,10 @@ import '../../../core/services/openrouter_datasheet_service.dart';
 import '../../../data/repositories/equipment_catalog.dart';
 import '../../../domain/services/equipment_input_validator.dart';
 import '../../../data/models/ai_extraction_result_model.dart';
+import '../../../data/models/ai_equipment_refinement.dart';
 import '../../../data/models/ai_equipment_mapper.dart';
 import '../../../domain/entities/inverter.dart';
+import '../../../domain/entities/inverter_mppt_configuration.dart';
 import '../../../domain/entities/pv_module.dart';
 import '../../../domain/enums/cell_technology.dart';
 import '../../../domain/enums/grid_connection.dart';
@@ -95,6 +97,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       'maxSystemVoltage', 'tempCoefVoc', 'tempCoefIsc', 'tempCoefPmax',
       'minOpTempMod', 'maxOpTempMod', 'fuseCurrent', 'physWarranty', 'effWarranty', 'effLoss',
       'nomPowerKw', 'maxInPowerKw', 'maxEff', 'euroEff', 'mpptCount',
+      'totalDcInputs', 'mpptCurrents', 'mpptIscCurrents',
       'maxInVolts', 'nomVoltsDc', 'startVolts', 'minMpptVolts', 'maxMpptVolts',
       'maxInCurrPerMppt', 'maxIsc', 'maxOutCurr', 'nomVoltsAc', 'dimensions',
       'minOpTempInv', 'maxOpTempInv', 'protDegree', 'warrantyYrs'
@@ -160,6 +163,10 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       put('maxEff', inverter.maxEfficiency * 100);
       put('euroEff', inverter.euroEfficiency * 100);
       put('mpptCount', inverter.mpptCount);
+      final config = inverter.mpptConfiguration;
+      put('totalDcInputs', config?.totalDcInputs);
+      put('mpptCurrents', config?.inputCurrentsA?.join('/'));
+      put('mpptIscCurrents', config?.shortCircuitCurrentsA?.join('/'));
       put('maxInVolts', inverter.maxInputVoltage);
       put('nomVoltsDc', inverter.nominalVoltageDc);
       put('startVolts', inverter.startVoltage);
@@ -441,12 +448,18 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
                   .take(index)
                   .any((previous) => _typedQueueKey(previous) ==
                       _typedQueueKey(item));
+              final gaps = item is AiExtractedModule
+                  ? AiEquipmentRefinement.missingModuleFields(item).length
+                  : AiEquipmentRefinement.missingInverterFields(
+                      item as AiExtractedInverter).length;
               final suffix = registered
                   ? ' — JÁ CADASTRADO'
                   : duplicatedInPdf ? ' — REPETIDO NO PDF' : '';
+              final pending = gaps == 0
+                  ? '' : ' — $gaps campo(s) não confirmado(s)';
               return Text(
                 '${index == 0 ? '▶ ' : '• '}$manufacturer — $modelName '
-                '(${item is AiExtractedModule ? 'Módulo' : 'Inversor'})$suffix',
+                '(${item is AiExtractedModule ? 'Módulo' : 'Inversor'})$suffix$pending',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: (registered || duplicatedInPdf)
@@ -493,10 +506,6 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         }
       } else if (item is AiExtractedInverter) {
         final issues = AiEquipmentMapper.inverterProblems(item);
-        if (item.hasAsymmetricMpptCurrents) {
-          // Ainda não há representação persistente por rastreador no Isar.
-          issues.add('correntes distintas por MPPT (revisar individualmente)');
-        }
         if (issues.isNotEmpty) {
           incomplete.add('${item.modelName}: ${issues.join(', ')}');
         } else {
@@ -714,6 +723,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         children: [
           Expanded(child: _buildTextField("Qtd MPPTs", 'mpptCount')),
           const SizedBox(width: 10),
+          Expanded(child: _buildTextField("Entradas CC totais", 'totalDcInputs')),
+          const SizedBox(width: 10),
           Expanded(child: _buildTextField("Tensão Máx (V)", 'maxInVolts')),
         ],
       ),
@@ -739,6 +750,12 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         ],
       ),
 
+      _buildTextField('Correntes Impp por MPPT (A, ex.: 32/16)', 'mpptCurrents'),
+      _buildTextField('Correntes Isc por MPPT (A, ex.: 40/20)', 'mpptIscCurrents'),
+      const Text(
+        'As correntes por MPPT são preservadas. Os campos escalares acima '
+        'representam os menores limites para cálculos legados.',
+      ),
       _buildSectionTitle("Saída AC"),
       Row(
         children: [
@@ -874,13 +891,18 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         _loadCurrentAiModel();
       });
       _loadManufacturers();
-      final incomplete = result.inverters
-          .where((item) => AiEquipmentMapper.inverterProblems(item).isNotEmpty)
-          .length;
+      final missingFields = result.modules.fold<int>(
+          0, (sum, m) =>
+              sum + AiEquipmentRefinement.missingModuleFields(m).length) +
+          result.inverters.fold<int>(
+              0, (sum, i) =>
+                  sum + AiEquipmentRefinement.missingInverterFields(i).length);
+      final invalid = result.inverters.where(
+          (i) => AiEquipmentMapper.inverterProblems(i).isNotEmpty).length;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${_pendingAiModels.length} modelo(s) identificado(s); '
-            '$incomplete inversor(es) com campos obrigatórios ausentes. '
-            'Confira os dados técnicos antes de salvar.'),
+        content: Text('${_pendingAiModels.length} modelo(s) identificado(s), '
+            '$missingFields campo(s) não confirmado(s) após refinamento; '
+            '$invalid inversor(es) exigem revisão.'),
       ));
     } catch (error) {
       if (!mounted) return;
@@ -938,6 +960,9 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       put('maxEff', _asPercent(data.maxEfficiency));
       put('euroEff', _asPercent(data.euroEfficiency));
       put('mpptCount', data.mpptCount);
+      put('totalDcInputs', data.totalDcInputs);
+      put('mpptCurrents', data.mpptInputCurrentsA?.join('/'));
+      put('mpptIscCurrents', data.mpptShortCircuitCurrentsA?.join('/'));
       put('maxInVolts', data.maxInputVoltage);
       put('nomVoltsDc', data.nominalVoltageDc);
       put('startVolts', data.startVoltage);
@@ -1006,35 +1031,27 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       }
     }
 
-    if (_pendingAiModels.isNotEmpty &&
-        _pendingAiModels.first is AiExtractedInverter) {
-      final extracted = _pendingAiModels.first as AiExtractedInverter;
-      if (extracted.hasAsymmetricMpptCurrents) {
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('Limites MPPT diferentes'),
-            content: Text('Correntes de entrada extraídas: '
-                '${extracted.mpptInputCurrentsA!.join(' / ')} A. '
-                'O banco atual armazena um único limite por MPPT. '
-                'O valor cadastrado será o menor limite, '
-                '${extracted.maxInputCurrentPerMppt} A. '
-                'Esta simplificação é conservadora, mas NÃO representa '
-                'integralmente os MPPTs. Deseja salvar mesmo assim?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Revisar'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Salvar com limite conservador'),
-              ),
-            ],
-          ),
-        );
-        if (confirmed != true || !mounted) return;
+    List<double>? currents(String key) {
+      final source = _ctrl[key]!.text.trim();
+      if (source.isEmpty) return null;
+      return source.split(RegExp(r'[/;]'))
+          .map((v) => double.parse(v.trim().replaceAll(',', '.')))
+          .toList();
+    }
+    InverterMpptConfiguration? mpptConfig;
+    if (type == 'inversor') {
+      final candidate = InverterMpptConfiguration(
+        inputCurrentsA: currents('mpptCurrents'),
+        shortCircuitCurrentsA: currents('mpptIscCurrents'),
+        totalDcInputs: _ctrl['totalDcInputs']!.text.trim().isEmpty
+            ? null : integer('totalDcInputs'),
+      );
+      final problems = candidate.validate(integer('mpptCount'));
+      if (problems.isNotEmpty) {
+        _showError(problems.join('; '));
+        return;
       }
+      if (candidate.hasDetails) mpptConfig = candidate;
     }
     setState(() => _isSaving = true);
     try {
@@ -1082,13 +1099,20 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
           maxEfficiency: number('maxEff') / 100,
           euroEfficiency: number('euroEff') / 100,
           mpptCount: integer('mpptCount'),
+          mpptConfigurationJson: mpptConfig?.encode(),
           maxInputVoltage: number('maxInVolts'),
           nominalVoltageDc: number('nomVoltsDc'),
           startVoltage: number('startVolts'),
           minMpptVoltage: number('minMpptVolts'),
           maxMpptVoltage: number('maxMpptVolts'),
-          maxInputCurrentPerMppt: number('maxInCurrPerMppt'),
-          maxShortCircuitCurrent: number('maxIsc'),
+          maxInputCurrentPerMppt: mpptConfig?.inputCurrentsA == null
+              ? number('maxInCurrPerMppt')
+              : mpptConfig!.inputCurrentsA!
+                  .reduce((a, b) => a < b ? a : b),
+          maxShortCircuitCurrent: mpptConfig?.shortCircuitCurrentsA == null
+              ? number('maxIsc')
+              : mpptConfig!.shortCircuitCurrentsA!
+                  .reduce((a, b) => a < b ? a : b),
           gridConnection: _invGridConn,
           maxOutputCurrent: number('maxOutCurr'),
           nominalVoltageAc: number('nomVoltsAc'),

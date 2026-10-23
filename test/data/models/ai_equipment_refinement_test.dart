@@ -47,6 +47,22 @@ void main() {
     expect(result.modules.last.modelName, 'JT-705');
   });
 
+  test('refinamento demanda correção quando MPPTs e vetores divergem', () {
+    final initial = parse([], [{
+      'manufacturer': 'AUXSOL',
+      'modelName': 'ASN-10SL',
+      'nominalPowerKw': 10,
+      'mpptCount': 3,
+      'mpptInputCurrentsA': [32, 16],
+      'mpptShortCircuitCurrentsA': [40, 20],
+    }]);
+    expect(AiEquipmentRefinement.needsRefinement(initial), isTrue);
+    final prompt = AiEquipmentRefinement.prompt(
+        initial, 'Quantidade MPPT: 2; Número Entradas: 3');
+    expect(prompt, contains('totalDcInputs'));
+    expect(prompt, contains('corrigir mpptCount'));
+  });
+
   test('preserva correntes MPPT refinadas sem perder módulos', () {
     final initial = parse([{
       'manufacturer': 'Jetion', 'modelName': 'JT-700', 'powerWp': 700,

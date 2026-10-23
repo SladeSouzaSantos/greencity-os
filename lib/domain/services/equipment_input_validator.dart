@@ -8,10 +8,11 @@ class EquipmentInputValidator {
     'minMpptVolts', 'maxMpptVolts', 'maxInCurrPerMppt',
   };
   static const Set<String> _integerFields = {
-    'powerWp', 'mpptCount', 'physWarranty', 'effWarranty', 'warrantyYrs',
+    'powerWp', 'mpptCount', 'totalDcInputs', 'physWarranty', 'effWarranty', 'warrantyYrs',
   };
   static const Set<String> _textFields = {
     'brand', 'model', 'dimensions', 'protDegree',
+    'mpptCurrents', 'mpptIscCurrents',
   };
 
   static bool isTextField(String key) => _textFields.contains(key);
@@ -26,6 +27,14 @@ class EquipmentInputValidator {
     required bool isModule,
   }) {
     final text = value?.trim() ?? '';
+    if (key == 'mpptCurrents' || key == 'mpptIscCurrents') {
+      if (text.isEmpty) return null;
+      final values = text.split(RegExp(r'[/;]')).map((item) =>
+          double.tryParse(item.trim().replaceAll(',', '.'))).toList();
+      return values.isNotEmpty &&
+              values.every((v) => v != null && v.isFinite && v > 0)
+          ? null : 'Informe correntes positivas separadas por / (ex.: 32/16).';
+    }
     if (isTextField(key)) {
       return isRequired(key, isModule: isModule) && text.isEmpty
           ? 'Campo obrigatório.'

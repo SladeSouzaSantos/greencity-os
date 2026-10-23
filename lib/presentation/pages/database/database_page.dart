@@ -129,10 +129,19 @@ Future<void> _viewEquipment(
       MapEntry('Eficiência máxima', '${inverter.maxEfficiency * 100}%'),
       MapEntry('Eficiência europeia', optionalNum(inverter.euroEfficiency * 100, '%')),
       MapEntry('MPPTs', '${inverter.mpptCount}'),
-      const MapEntry('Limitação da versão',
-        'Uma única corrente por MPPT é armazenada. Se os rastreadores '
-        'tiverem limites diferentes, confira a ficha original antes '
-        'do dimensionamento.'),
+      MapEntry('Entradas CC totais',
+          inverter.mpptConfiguration?.totalDcInputs?.toString() ??
+              'Não informado'),
+      MapEntry('Impp por MPPT',
+          inverter.mpptConfiguration?.inputCurrentsA
+              ?.map((v) => '$v A').join(' / ') ?? 'Não informado'),
+      MapEntry('Isc por MPPT',
+          inverter.mpptConfiguration?.shortCircuitCurrentsA
+              ?.map((v) => '$v A').join(' / ') ?? 'Não informado'),
+      if (inverter.mpptConfiguration == null)
+        const MapEntry('Registro legado',
+          'Não há detalhes por rastreador cadastrados. Os limites '
+          'escalares abaixo podem representar um mínimo conservador.'),
       MapEntry('Tensão máxima CC', '${inverter.maxInputVoltage} V'),
       MapEntry('Tensão nominal CC', '${inverter.nominalVoltageDc} V'),
       MapEntry('Tensão inicial', '${inverter.startVoltage} V'),
