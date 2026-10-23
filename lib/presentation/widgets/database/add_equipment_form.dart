@@ -6,6 +6,7 @@ import '../../../core/injection/injection.dart';
 import '../../../core/services/ia_service.dart';
 import '../../../data/repositories/equipment_catalog.dart';
 import '../../../data/models/ai_extraction_result_model.dart';
+import '../../../data/models/ai_equipment_mapper.dart';
 import '../../../domain/entities/inverter.dart';
 import '../../../domain/entities/pv_module.dart';
 import '../../../domain/enums/cell_technology.dart';
@@ -310,6 +311,12 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
             },
           ),
         ),
+        FilledButton.tonalIcon(
+          onPressed: _isSaving ? null : _importAllAiModels,
+          icon: const Icon(Icons.library_add_check),
+          label: const Text('IMPORTAR TODOS OS MODELOS VÁLIDOS'),
+        ),
+        const SizedBox(height: 8),
         TextButton.icon(
           onPressed: _isSaving ? null : _skipCurrentAiModel,
           icon: const Icon(Icons.skip_next),
@@ -317,6 +324,92 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
         ),
       ],
     );
+  }
+
+  Future<void> _importAllAiModels() async {
+    if (_isSaving || _pendingAiModels.isEmpty) return;
+    final modules = <PvModule>[];
+    final inverters = <Inverter>[];
+    final incomplete = <String>[];
+    for (final item in _pendingAiModels) {
+      if (item is AiExtractedModule) {
+        final issues = AiEquipmentMapper.moduleProblems(item);
+        if (issues.isNotEmpty) {
+          incomplete.add('${item.modelName}: ${issues.join(', ')}');
+        } else {
+          modules.add(AiEquipmentMapper.module(item));
+        }
+      } else if (item is AiExtractedInverter) {
+        final issues = AiEquipmentMapper.inverterProblems(item);
+        if (issues.isNotEmpty) {
+          incomplete.add('${item.modelName}: ${issues.join(', ')}');
+        } else {
+          inverters.add(AiEquipmentMapper.inverter(item));
+        }
+      }
+    }
+
+    if (incomplete.isNotEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Revise os modelos incompletos'),
+          content: SingleChildScrollView(
+            child: Text('A importação em lote não salva cadastros incompletos. '
+                'Revise estes modelos individualmente:\n\n'
+                '${incomplete.take(15).join('\n')}'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirmar importação em lote'),
+        content: Text('Adicionar ${modules.length} módulo(s) e '
+            '${inverters.length} inversor(es)? '
+            'Os dados serão usados como a IA os extraiu, sem aplicar '
+            'eventuais edições ainda não salvas no formulário. '
+            'Confirme as especificações do PDF antes de prosseguir. '
+            'Modelos já cadastrados serão ignorados.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Importar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _isSaving = true);
+    try {
+      final report = await EquipmentCatalog(getIt<Isar>()).importMany(
+        modules: modules,
+        inverters: inverters,
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${report.totalAdded} equipamento(s) incluído(s); '
+            '${report.duplicatesSkipped} duplicado(s) ignorado(s).'),
+      ));
+    } catch (error) {
+      _showError('Falha na importação em lote: $error');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   void _skipCurrentAiModel() {

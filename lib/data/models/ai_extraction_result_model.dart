@@ -116,7 +116,7 @@ class AiExtractedModule {
       modelName: _string(json['modelName']),
       powerWp: _integer(json['powerWp']) ?? 0,
       efficiency: _number(json['efficiency']) ?? 0,
-      cellTechnology: _string(json['cellTechnology'], 'TOPCON'),
+      cellTechnology: _string(json['cellTechnology']),
       vOc: _number(json['vOc']) ?? 0,
       iSc: _number(json['iSc']) ?? 0,
       vMp: _number(json['vMp']) ?? 0,
@@ -213,8 +213,8 @@ class AiExtractedInverter {
       maxShortCircuitCurrent: _number(json['maxShortCircuitCurrent']),
       maxOutputCurrent: _number(json['maxOutputCurrent']),
       nominalVoltageAc: _number(json['nominalVoltageAc']),
-      inverterType: _string(json['inverterType'], 'string'),
-      gridConnection: _string(json['gridConnection'], 'triphasic'),
+      inverterType: _string(json['inverterType']),
+      gridConnection: _string(json['gridConnection']),
       isHybrid: _boolean(json['isHybrid']) ?? false,
       dimensions: _string(json['dimensions']).isEmpty
           ? null
