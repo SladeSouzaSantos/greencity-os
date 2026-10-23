@@ -5,12 +5,12 @@ import 'ai_extraction_result_model.dart';
 class AiDatasheetSemanticAuditor {
   static String key(Object item) {
     if (item is AiExtractedModule) {
-      return 'module:' + item.manufacturer.toLowerCase().trim() + '::' +
-          item.modelName.toLowerCase().trim();
+      return 'module:${item.manufacturer.toLowerCase().trim()}::'
+          '${item.modelName.toLowerCase().trim()}';
     }
     final i = item as AiExtractedInverter;
-    return 'inverter:' + i.manufacturer.toLowerCase().trim() + '::' +
-        i.modelName.toLowerCase().trim();
+    return 'inverter:${i.manufacturer.toLowerCase().trim()}::'
+        '${i.modelName.toLowerCase().trim()}';
   }
 
   static AiExtractionResultModel audit(
@@ -47,14 +47,14 @@ class AiDatasheetSemanticAuditor {
       }
       if (performanceWarranty != null &&
           performanceWarranty != performance) {
-        issues.add('EXTRAÍDO DA FONTE: garantia de desempenho ' +
-            performanceWarranty.toString() + ' anos.');
+        issues.add('EXTRAÍDO DA FONTE: garantia de desempenho '
+            '$performanceWarranty anos.');
         performance = performanceWarranty;
       }
       if (loss != null &&
           (exactLoss == null || (loss - exactLoss).abs() > 0.01)) {
-        issues.add('NÃO CONFIRMADO: degradação final informada como ' +
-            loss.toString() + '%, sem evidência de valor exato.');
+        issues.add('NÃO CONFIRMADO: degradação final informada como '
+            '$loss%, sem evidência de valor exato.');
         loss = null;
       }
       loss ??= exactLoss;
@@ -64,19 +64,16 @@ class AiDatasheetSemanticAuditor {
       if (fuse != null &&
           (fuseCurrent == null || (fuse - fuseCurrent).abs() > 0.01)) {
         fuseCurrent = fuse;
-        issues.add('EXTRAÍDO DA FONTE: fusível máximo ' +
-            fuse.toString() + ' A.');
+        issues.add('EXTRAÍDO DA FONTE: fusível máximo $fuse A.');
       }
       if (temperatures != null) {
         if (low == null || low != temperatures.$1) {
           low = temperatures.$1;
-          issues.add('EXTRAÍDO DA FONTE: temperatura mínima ' +
-              low.toString() + ' °C.');
+          issues.add('EXTRAÍDO DA FONTE: temperatura mínima $low °C.');
         }
         if (high == null || high != temperatures.$2) {
           high = temperatures.$2;
-          issues.add('EXTRAÍDO DA FONTE: temperatura máxima ' +
-              high.toString() + ' °C.');
+          issues.add('EXTRAÍDO DA FONTE: temperatura máxima $high °C.');
         }
       }
       final updated = AiExtractedModule(
@@ -125,21 +122,20 @@ class AiDatasheetSemanticAuditor {
             'confira a coluna correspondente no PDF.');
       }
       if (trackers != null && trackers != count) {
-        issues.add('INCONSISTENTE: MPPTs ' + (count?.toString() ?? '?') +
-            '; PDF indica ' + trackers.toString() + '.');
+        issues.add('INCONSISTENTE: MPPTs ${count ?? "?"}; '
+            'PDF indica $trackers.');
         count = trackers;
       }
       if (dcInputs != null && dcInputs != inputs) {
-        issues.add('INCONSISTENTE: entradas CC ' +
-            (inputs?.toString() ?? '?') + '; PDF indica ' +
-            dcInputs.toString() + '.');
+        issues.add('INCONSISTENTE: entradas CC ${inputs ?? "?"}; '
+            'PDF indica $dcInputs.');
         inputs = dcInputs;
       }
       final ac = _acCurrent(source, i, original.inverters);
       var output = i.maxOutputCurrent;
       if (ac != null && (output == null || (output - ac).abs() > 0.01)) {
-        issues.add('EXTRAÍDO DA FONTE: corrente máxima CA ' +
-            ac.toString() + ' A para ' + i.modelName + '.');
+        issues.add('EXTRAÍDO DA FONTE: corrente máxima CA '
+            '$ac A para ${i.modelName}.');
         output = ac;
       }
       final updated = AiExtractedInverter(

@@ -435,13 +435,13 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
                     style: TextStyle(fontWeight: FontWeight.bold)),
                 for (final warning in _aiAuditWarnings[
                     AiDatasheetSemanticAuditor.key(_pendingAiModels.first)]!)
-                  Text('• ' + warning,
+                  Text('• $warning',
                       style: const TextStyle(color: Colors.deepOrange)),
               ],
             ),
           ),
         if (_manualEditedFields.isNotEmpty)
-          Text('REVISADO MANUALMENTE: ' + _manualEditedFields.join(', '),
+          Text('REVISADO MANUALMENTE: ${_manualEditedFields.join(', ')}',
               style: const TextStyle(color: Colors.green)),
         const Text('Estados: EXTRAÍDO DA FONTE = valor conferido; '
             'NÃO CONFIRMADO = revisar no PDF; INCONSISTENTE = divergência; '
@@ -530,9 +530,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       if (auditIssues.isNotEmpty) {
         final label = item is AiExtractedModule
             ? item.modelName : (item as AiExtractedInverter).modelName;
-        incomplete.add(label +
-            ': revisão documental obrigatória (' +
-            auditIssues.length.toString() + ' aviso(s))');
+        incomplete.add('$label: revisão documental obrigatória '
+            '(${auditIssues.length} aviso(s))');
         continue;
       }
       if (item is AiExtractedModule) {
@@ -1111,7 +1110,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
             content: SingleChildScrollView(
               child: Text('Existem propriedades não confirmadas ou '
                   'corrigidas durante a auditoria. Confira com o PDF '
-                  'antes de salvar:\n\n' + warnings.join('\n') + '\n\n'
+                  'antes de salvar:\n\n${warnings.join('\n')}\n\n'
                   'Deseja confirmar manualmente este cadastro?'),
             ),
             actions: [
