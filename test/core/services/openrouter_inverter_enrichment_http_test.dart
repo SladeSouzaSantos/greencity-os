@@ -134,6 +134,8 @@ Jetion Solar JT690SLk(B) 690 Wp
 Maximum System Voltage 1500V/DC(IEC)
 Operating Temperature -40°C-+85°C
 Maximum Series Fuse 35A
+Documento técnico completo; condições de ensaio padrão STC e
+parâmetros mecânicos conforme tabela de propriedades gerais.
 ''';
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
       calls++;
@@ -173,6 +175,8 @@ Corrente Máx. (Impp) 32A/16A 32A/16A 32A/16A
 Quantidade MPPT 2 2 2
 Número de Entradas do Inversor 3 3 3
 Corrente Máx. de Saída 40.9A 45.5A 47.7A
+Tabela adicional de características operacionais e dimensões,
+com as mesmas três variantes identificadas no cabeçalho acima.
 ''';
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
       calls++;
