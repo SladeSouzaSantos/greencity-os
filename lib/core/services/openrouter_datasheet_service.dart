@@ -166,7 +166,7 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
         },
         options: Options(
           headers: {
-            'Authorization': 'Bearer \${key}',
+            'Authorization': 'Bearer ${key}',
             'Content-Type': 'application/json',
             'X-Title': 'GreenCity OS',
           },
@@ -251,7 +251,7 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
     switch (status) {
       case 400:
       case 422:
-        return 'OpenRouter rejeitou a requisição (HTTP \${status}). Confira o modelo e o motor de leitura PDF.';
+        return 'OpenRouter rejeitou a requisição (HTTP ${status}). Confira o modelo e o motor de leitura PDF.';
       case 401:
         return 'Chave OPENROUTER_API_KEY inválida ou revogada (HTTP 401).';
       case 402:
@@ -267,7 +267,7 @@ listas vazias. Não crie modelos por interpolação ou intervalo.
       default:
         if (status != null && status >= 500) {
           return 'OpenRouter ou o provedor do modelo está indisponível '
-              '(HTTP \${status}).';
+              '(HTTP ${status}).';
         }
     }
     if (const {'connectionTimeout', 'receiveTimeout', 'sendTimeout',
