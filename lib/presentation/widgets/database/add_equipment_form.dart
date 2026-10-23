@@ -47,6 +47,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   bool _invHybrid = false;
 
   final List<Object> _pendingAiModels = [];
+  final Set<String> _registeredModuleKeys = {};
+  final Set<String> _registeredInverterKeys = {};
   bool _isLoadingAi = false;
   bool _isSaving = false;
   int _totalAiModels = 0;
@@ -362,6 +364,24 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
           );
   }
 
+  String _queueKey(Object item) {
+    if (item is AiExtractedModule) {
+      return EquipmentCatalog.key(item.manufacturer, item.modelName);
+    }
+    final inv = item as AiExtractedInverter;
+    return EquipmentCatalog.key(inv.manufacturer, inv.modelName);
+  }
+
+  bool _isRegistered(Object item) {
+    final key = _queueKey(item);
+    return item is AiExtractedModule
+        ? _registeredModuleKeys.contains(key)
+        : _registeredInverterKeys.contains(key);
+  }
+
+  String _typedQueueKey(Object item) =>
+      (item is AiExtractedModule ? 'module:' : 'inverter:') + _queueKey(item);
+
   Widget _buildImportQueue() {
     final currentNumber = _totalAiModels - _pendingAiModels.length + 1;
     return Column(
@@ -392,6 +412,16 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
               style: const TextStyle(color: Colors.deepOrange),
             ),
           ),
+        if (_isRegistered(_pendingAiModels.first))
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              'JÁ CADASTRADO: fabricante e modelo encontrados no banco. '
+              'O PDF foi lido normalmente. Pule este registro para não '
+              'substituir os dados existentes.',
+              style: TextStyle(color: Colors.deepOrange),
+            ),
+          ),
         const SizedBox(height: 8),
         Container(
           constraints: const BoxConstraints(maxHeight: 125),
@@ -406,11 +436,22 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
               final modelName = item is AiExtractedModule
                   ? item.modelName
                   : (item as AiExtractedInverter).modelName;
+              final registered = _isRegistered(item);
+              final duplicatedInPdf = _pendingAiModels
+                  .take(index)
+                  .any((previous) => _typedQueueKey(previous) ==
+                      _typedQueueKey(item));
+              final suffix = registered
+                  ? ' — JÁ CADASTRADO'
+                  : duplicatedInPdf ? ' — REPETIDO NO PDF' : '';
               return Text(
                 '${index == 0 ? '▶ ' : '• '}$manufacturer — $modelName '
-                '(${item is AiExtractedModule ? 'Módulo' : 'Inversor'})',
+                '(${item is AiExtractedModule ? 'Módulo' : 'Inversor'})$suffix',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: (registered || duplicatedInPdf)
+                    ? const TextStyle(color: Colors.deepOrange)
+                    : null,
               );
             },
           ),
@@ -435,7 +476,14 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     final modules = <PvModule>[];
     final inverters = <Inverter>[];
     final incomplete = <String>[];
+    final seenInPdf = <String>{};
+    var duplicates = 0;
     for (final item in _pendingAiModels) {
+      if (_isRegistered(item) ||
+          !seenInPdf.add(_typedQueueKey(item))) {
+        duplicates++;
+        continue;
+      }
       if (item is AiExtractedModule) {
         final issues = AiEquipmentMapper.moduleProblems(item);
         if (issues.isNotEmpty) {
@@ -457,6 +505,11 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       }
     }
 
+    if (modules.isEmpty && inverters.isEmpty && incomplete.isEmpty) {
+      _showError('Nenhum modelo novo para importar: $duplicates já existe(m) '
+          'ou está(ão) repetido(s) no PDF.');
+      return;
+    }
     if (incomplete.isNotEmpty) {
       await showDialog<void>(
         context: context,
@@ -487,7 +540,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
             'Os dados serão usados como a IA os extraiu, sem aplicar '
             'eventuais edições ainda não salvas no formulário. '
             'Confirme as especificações do PDF antes de prosseguir. '
-            'Modelos já cadastrados serão ignorados.'),
+            '$duplicates duplicado(s) identificado(s) e ignorado(s).'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -796,9 +849,22 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     try {
       // Somente o arquivo escolhido é enviado ao OpenRouter.
       // Um refinamento opcional usa o texto retornado, sem reenviar o PDF.
-      final result = await OpenRouterDatasheetService().extractEquipmentData(file.path!);
+      final result = await OpenRouterDatasheetService()
+          .extractEquipmentData(file.path!);
+      if (!mounted) return;
+      final isar = getIt<Isar>();
+      final modulesAlready = await isar.pvModules.where().findAll();
+      final invertersAlready = await isar.inverters.where().findAll();
       if (!mounted) return;
       setState(() {
+        _registeredModuleKeys
+          ..clear()
+          ..addAll(modulesAlready.map((m) =>
+              EquipmentCatalog.key(m.manufacturer, m.modelName)));
+        _registeredInverterKeys
+          ..clear()
+          ..addAll(invertersAlready.map((i) =>
+              EquipmentCatalog.key(i.manufacturer, i.modelName)));
         _pendingAiModels
           ..clear()
           ..addAll(result.modules)
@@ -909,6 +975,12 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     if (_isSaving || _isLoadingAi) return;
     if (!_formKey.currentState!.validate()) {
       _showError('Revise os campos obrigatórios e os números informados.');
+      return;
+    }
+    if (_pendingAiModels.isNotEmpty &&
+        _isRegistered(_pendingAiModels.first)) {
+      _showError('Este fabricante e modelo já está cadastrado. '
+          'Use Pular este modelo ou edite o registro existente.');
       return;
     }
     final brand = _ctrl['brand']!.text.trim();
@@ -1038,7 +1110,13 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       if (!mounted) return;
       if (_pendingAiModels.isNotEmpty) {
         setState(() {
-          _pendingAiModels.removeAt(0);
+          final savedItem = _pendingAiModels.removeAt(0);
+          final key = _queueKey(savedItem);
+          if (savedItem is AiExtractedModule) {
+            _registeredModuleKeys.add(key);
+          } else {
+            _registeredInverterKeys.add(key);
+          }
           _savedAiModels++;
           if (_pendingAiModels.isNotEmpty) {
             _loadCurrentAiModel();
