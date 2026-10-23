@@ -200,6 +200,54 @@ class AiExtractedInverter {
     return values.where((v) => v == null || !v.isFinite || v <= 0).length;
   }
 
+  /// Completa somente lacunas do mesmo fabricante+modelo.
+  AiExtractedInverter fillMissing(AiExtractedInverter newer) {
+    if (manufacturer.trim().toLowerCase() !=
+            newer.manufacturer.trim().toLowerCase() ||
+        modelName.trim().toLowerCase() !=
+            newer.modelName.trim().toLowerCase()) return this;
+
+    double p(double old, double candidate) => old > 0 ? old : candidate;
+    double? n(double? old, double? candidate) =>
+        old != null && old > 0 ? old : candidate;
+
+    return AiExtractedInverter(
+      manufacturer: manufacturer,
+      modelName: modelName,
+      nominalPowerKw: p(nominalPowerKw, newer.nominalPowerKw),
+      maxInputPowerKw: n(maxInputPowerKw, newer.maxInputPowerKw),
+      maxEfficiency: n(maxEfficiency, newer.maxEfficiency),
+      euroEfficiency: n(euroEfficiency, newer.euroEfficiency),
+      mpptCount: mpptCount != null && mpptCount! > 0 ?
+          mpptCount : newer.mpptCount,
+      maxInputVoltage: n(maxInputVoltage, newer.maxInputVoltage),
+      nominalVoltageDc: n(nominalVoltageDc, newer.nominalVoltageDc),
+      startVoltage: n(startVoltage, newer.startVoltage),
+      minMpptVoltage: n(minMpptVoltage, newer.minMpptVoltage),
+      maxMpptVoltage: n(maxMpptVoltage, newer.maxMpptVoltage),
+      maxInputCurrentPerMppt: n(
+          maxInputCurrentPerMppt, newer.maxInputCurrentPerMppt),
+      maxShortCircuitCurrent: n(
+          maxShortCircuitCurrent, newer.maxShortCircuitCurrent),
+      mpptInputCurrentsA: mpptInputCurrentsA ?? newer.mpptInputCurrentsA,
+      mpptShortCircuitCurrentsA:
+          mpptShortCircuitCurrentsA ?? newer.mpptShortCircuitCurrentsA,
+      maxOutputCurrent: n(maxOutputCurrent, newer.maxOutputCurrent),
+      nominalVoltageAc: n(nominalVoltageAc, newer.nominalVoltageAc),
+      inverterType: inverterType.isNotEmpty ? inverterType : newer.inverterType,
+      gridConnection: gridConnection.isNotEmpty ?
+          gridConnection : newer.gridConnection,
+      isHybrid: isHybrid || newer.isHybrid,
+      dimensions: dimensions?.isNotEmpty == true ? dimensions : newer.dimensions,
+      weight: weight ?? newer.weight,
+      minOperatingTemp: minOperatingTemp ?? newer.minOperatingTemp,
+      maxOperatingTemp: maxOperatingTemp ?? newer.maxOperatingTemp,
+      protectionDegree: protectionDegree?.isNotEmpty == true ?
+          protectionDegree : newer.protectionDegree,
+      warrantyYears: warrantyYears ?? newer.warrantyYears,
+    );
+  }
+
   factory AiExtractedInverter.fromJson(Map<String, dynamic> json) {
     final rawRange = json['mpptVoltageRange'] ?? json['mpptRange'];
     final range = AiNumericValueParser.mpptRange(rawRange);
@@ -230,8 +278,8 @@ class AiExtractedInverter {
       nominalVoltageDc: _number(json['nominalVoltageDc']) ??
           AiNumericValueParser.nominalFromMpptRange(rawRange),
       startVoltage: _number(json['startVoltage']),
-      minMpptVoltage: _number(json['minMpptVoltage']) ?? (range == null ? null : range.first),
-      maxMpptVoltage: _number(json['maxMpptVoltage']) ?? (range == null ? null : range.last),
+      minMpptVoltage: _number(json['minMpptVoltage']) ?? range?.first,
+      maxMpptVoltage: _number(json['maxMpptVoltage']) ?? range?.last,
       maxInputCurrentPerMppt:
           AiNumericValueParser.minCurrent(currents) ??
           _number(json['maxInputCurrentPerMppt']),
