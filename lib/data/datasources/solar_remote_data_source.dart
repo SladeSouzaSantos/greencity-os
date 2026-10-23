@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:injectable/injectable.dart';
+import 'hsp_api_error_formatter.dart';
 import '../models/solar_engine_result_model.dart';
 import '../models/solar_quote_model.dart';
 
@@ -37,6 +38,12 @@ class SolarRemoteDataSourceImpl implements SolarRemoteDataSource {
           'longitude': longitude,
           'itens': items,
         },
+        // A consulta meteorológica pode exigir tempo de processamento maior
+        // que o timeout global, especialmente na primeira requisição.
+        options: Options(
+          receiveTimeout: const Duration(seconds: 90),
+          sendTimeout: const Duration(seconds: 30),
+        ),
       );
 
       // 2. Se chegou aqui, a rede funcionou. Verificamos o status da API.
@@ -47,20 +54,11 @@ class SolarRemoteDataSourceImpl implements SolarRemoteDataSource {
       }
 
     } on DioException catch (e) {
-      // 3. Captura erros específicos do Dio (Internet fora, timeout, etc)
-      // Você pode logar isso ou tratar conforme o tipo de erro
-      String errorMessage = 'Erro de conexão desconhecido';
-      
-      if (e.type == DioExceptionType.connectionTimeout) {
-        errorMessage = 'Tempo de conexão esgotado. Verifique sua internet.';
-      } else if (e.response?.statusCode == 404) {
-        errorMessage = 'Endpoint da API não encontrado.';
-      }
-      
-      throw Exception(errorMessage);
+      // Mantém a mensagem de validação HTTP 422, em vez de escondê-la
+      // sob "Erro de conexão desconhecido".
+      throw Exception(HspApiErrorFormatter.format(e));
     } catch (e) {
-      // 4. Captura qualquer outro erro inesperado
-      throw Exception('Erro inesperado: $e');
+      throw Exception('Erro ao processar resposta HSP: $e');
     }
   }
 
