@@ -40,7 +40,7 @@ class AddScenarioModal extends StatefulWidget {
 class _AddScenarioModalState extends State<AddScenarioModal> {
   late TextEditingController inclinationController;
   final azimuthController = TextEditingController(text: "0");
-  final distanceToGroundController = TextEditingController(text: "0.50");
+  final distanceToGroundController = TextEditingController(text: "0.15");
   final arrayCountController = TextEditingController(text: "1");
   
   final obsHeightController = TextEditingController(text: "2.0");
