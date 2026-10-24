@@ -10,6 +10,7 @@ import '../../data/models/ai_extraction_result_model.dart';
 import '../../data/models/ai_inverter_refinement.dart';
 import 'openrouter_free_model_policy.dart';
 import 'datasheet_extraction_prompt.dart';
+import 'cloud_provider_support.dart';
 
 /// Envia PDFs escolhidos pelo usuário ao OpenRouter.
 /// Usa uma instância Dio própria, SEM LogInterceptor, para nunca registrar
@@ -249,8 +250,13 @@ class OpenRouterDatasheetService {
           includeResponseFormat: false,
         );
       }
-      // Nunca usar error.toString() porque Dio inclui RequestOptions.
-      throw StateError(_friendlyError(error));
+      // Mantém diagnóstico amigável e expõe código tipado para fallback.
+      final failure = CloudProviderFailure.fromDio(error);
+      throw CloudProviderFailure(
+        failure.code, _friendlyError(error),
+        allowFallback: failure.allowFallback,
+        httpStatus: failure.httpStatus,
+      );
     }
   }
 
