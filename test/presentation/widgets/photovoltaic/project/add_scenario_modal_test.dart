@@ -20,9 +20,9 @@ void main() {
       ),
     ));
 
-    final heightField = tester.widget<TextFormField>(
+    final heightField = tester.widget<TextField>(
       find.byWidgetPredicate(
-        (widget) => widget is TextFormField &&
+        (widget) => widget is TextField &&
             widget.decoration?.labelText == 'Altura do centro do módulo (m)',
       ),
     );
