@@ -51,8 +51,6 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
   bool _invHybrid = false;
 
   final List<Object> _pendingAiModels = [];
-  final Set<String> _registeredModuleKeys = {};
-  final Set<String> _registeredInverterKeys = {};
   Map<String, List<String>> _aiAuditWarnings = {};
   String _aiProviderDescription = '';
   final Set<String> _manualEditedFields = {};
@@ -386,13 +384,6 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     return EquipmentCatalog.key(inv.manufacturer, inv.modelName);
   }
 
-  bool _isRegistered(Object item) {
-    final key = _queueKey(item);
-    return item is AiExtractedModule
-        ? _registeredModuleKeys.contains(key)
-        : _registeredInverterKeys.contains(key);
-  }
-
   String _typedQueueKey(Object item) =>
       (item is AiExtractedModule ? 'module:' : 'inverter:') + _queueKey(item);
 
@@ -449,16 +440,6 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
             'NÃO CONFIRMADO = revisar no PDF; INCONSISTENTE = divergência; '
             'REVISADO MANUALMENTE = campo alterado no formulário.',
             style: TextStyle(fontSize: 11)),
-        if (_isRegistered(_pendingAiModels.first))
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-              'JÁ CADASTRADO: fabricante e modelo encontrados no banco. '
-              'O PDF foi lido normalmente. Pule este registro para não '
-              'substituir os dados existentes.',
-              style: TextStyle(color: Colors.deepOrange),
-            ),
-          ),
         const SizedBox(height: 8),
         Container(
           constraints: const BoxConstraints(maxHeight: 125),
@@ -473,28 +454,17 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
               final modelName = item is AiExtractedModule
                   ? item.modelName
                   : (item as AiExtractedInverter).modelName;
-              final registered = _isRegistered(item);
-              final duplicatedInPdf = _pendingAiModels
-                  .take(index)
-                  .any((previous) => _typedQueueKey(previous) ==
-                      _typedQueueKey(item));
               final gaps = item is AiExtractedModule
                   ? AiEquipmentRefinement.missingModuleFields(item).length
                   : AiEquipmentRefinement.missingInverterFields(
                       item as AiExtractedInverter).length;
-              final suffix = registered
-                  ? ' — JÁ CADASTRADO'
-                  : duplicatedInPdf ? ' — REPETIDO NO PDF' : '';
               final pending = gaps == 0
                   ? '' : ' — $gaps campo(s) não confirmado(s)';
               return Text(
                 '${index == 0 ? '▶ ' : '• '}$manufacturer — $modelName '
-                '(${item is AiExtractedModule ? 'Módulo' : 'Inversor'})$suffix$pending',
+                '(${item is AiExtractedModule ? 'Módulo' : 'Inversor'})$pending',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: (registered || duplicatedInPdf)
-                    ? const TextStyle(color: Colors.deepOrange)
-                    : null,
               );
             },
           ),
@@ -522,8 +492,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     final seenInPdf = <String>{};
     var duplicates = 0;
     for (final item in _pendingAiModels) {
-      if (_isRegistered(item) ||
-          !seenInPdf.add(_typedQueueKey(item))) {
+      if (!seenInPdf.add(_typedQueueKey(item))) {
         duplicates++;
         continue;
       }
@@ -554,8 +523,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     }
 
     if (modules.isEmpty && inverters.isEmpty && incomplete.isEmpty) {
-      _showError('Nenhum modelo novo para importar: $duplicates já existe(m) '
-          'ou está(ão) repetido(s) no PDF.');
+      _showError('Nenhum modelo disponível: $duplicates repetido(s) '
+          'no PDF. Nenhuma alteração foi realizada no banco.');
       return;
     }
     if (incomplete.isNotEmpty) {
@@ -588,7 +557,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
             'Os dados serão usados como a IA os extraiu, sem aplicar '
             'eventuais edições ainda não salvas no formulário. '
             'Confirme as especificações do PDF antes de prosseguir. '
-            '$duplicates duplicado(s) identificado(s) e ignorado(s).'),
+            '$duplicates repetição(ões) do próprio PDF ignorada(s). '
+            'O banco será conferido novamente ao confirmar o salvamento.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -612,7 +582,8 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('${report.totalAdded} equipamento(s) incluído(s); '
-            '${report.duplicatesSkipped} duplicado(s) ignorado(s).'),
+            '${report.duplicatesSkipped + duplicates} duplicado(s) '
+            'ignorados ao salvar, sem sobrescrever registros.'),
       ));
     } catch (error) {
       _showError('Falha na importação em lote: $error');
@@ -937,29 +908,13 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       // com Ollama desativado, preserva o fluxo original OpenRouter.
       final result = await aiService.extractEquipmentData(file.path!);
       if (!mounted) return;
-      // Evita ler uma coleção não relacionada: um PDF de módulos não
-      // depende da integridade dos registros de inversores e vice-versa.
-      failureContext = 'na consulta de duplicatas no banco Isar';
-      final isar = getIt<Isar>();
-      final modulesAlready = result.modules.isEmpty
-          ? <PvModule>[]
-          : await isar.pvModules.where().findAll();
-      final invertersAlready = result.inverters.isEmpty
-          ? <Inverter>[]
-          : await isar.inverters.where().findAll();
+      // A checagem de duplicidade é feita somente na transação de
+      // salvamento, após a revisão manual do fabricante e modelo.
       if (!mounted) return;
       setState(() {
         _aiAuditWarnings = result.auditWarnings;
         _aiProviderDescription = aiService.providerDescription;
         _manualEditedFields.clear();
-        _registeredModuleKeys
-          ..clear()
-          ..addAll(modulesAlready.map((m) =>
-              EquipmentCatalog.key(m.manufacturer, m.modelName)));
-        _registeredInverterKeys
-          ..clear()
-          ..addAll(invertersAlready.map((i) =>
-              EquipmentCatalog.key(i.manufacturer, i.modelName)));
         _pendingAiModels
           ..clear()
           ..addAll(result.modules)
@@ -1079,12 +1034,6 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
     if (_isSaving || _isLoadingAi) return;
     if (!_formKey.currentState!.validate()) {
       _showError('Revise os campos obrigatórios e os números informados.');
-      return;
-    }
-    if (_pendingAiModels.isNotEmpty &&
-        _isRegistered(_pendingAiModels.first)) {
-      _showError('Este fabricante e modelo já está cadastrado. '
-          'Use Pular este modelo ou edite o registro existente.');
       return;
     }
     final brand = _ctrl['brand']!.text.trim();
@@ -1243,13 +1192,7 @@ class _AddEquipmentFormState extends State<AddEquipmentForm> {
       if (!mounted) return;
       if (_pendingAiModels.isNotEmpty) {
         setState(() {
-          final savedItem = _pendingAiModels.removeAt(0);
-          final key = _queueKey(savedItem);
-          if (savedItem is AiExtractedModule) {
-            _registeredModuleKeys.add(key);
-          } else {
-            _registeredInverterKeys.add(key);
-          }
+          _pendingAiModels.removeAt(0);
           _savedAiModels++;
           if (_pendingAiModels.isNotEmpty) {
             _loadCurrentAiModel();

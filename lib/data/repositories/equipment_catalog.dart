@@ -41,23 +41,32 @@ class EquipmentCatalog {
         key(entry.manufacturer, entry.modelName) == key(manufacturer, model));
   }
 
-  Future<void> addModule(PvModule module) async {
-    if (await moduleExists(module.manufacturer, module.modelName)) {
-      throw StateError('Este modelo de módulo já está cadastrado.');
-    }
-    await _isar.writeTxn(() async {
-      await _isar.pvModules.put(module);
-    });
-  }
+  /// A checagem decisiva ocorre na mesma transação da inserção.
+  /// Assim, a conferência usa o fabricante/modelo final do formulário e
+  /// não permite que uma lista obtida antes da revisão fique obsoleta.
+  Future<void> addModule(PvModule module) => _isar.writeTxn(() async {
+        final existing = await _isar.pvModules.where().findAll();
+        if (existing.any((item) =>
+            key(item.manufacturer, item.modelName) ==
+            key(module.manufacturer, module.modelName))) {
+          throw StateError('Módulo já cadastrado com fabricante '
+              '"${module.manufacturer}" e modelo "${module.modelName}". '
+              'Nenhum registro foi alterado.');
+        }
+        await _isar.pvModules.put(module);
+      });
 
-  Future<void> addInverter(Inverter inverter) async {
-    if (await inverterExists(inverter.manufacturer, inverter.modelName)) {
-      throw StateError('Este modelo de inversor já está cadastrado.');
-    }
-    await _isar.writeTxn(() async {
-      await _isar.inverters.put(inverter);
-    });
-  }
+  Future<void> addInverter(Inverter inverter) => _isar.writeTxn(() async {
+        final existing = await _isar.inverters.where().findAll();
+        if (existing.any((item) =>
+            key(item.manufacturer, item.modelName) ==
+            key(inverter.manufacturer, inverter.modelName))) {
+          throw StateError('Inversor já cadastrado com fabricante '
+              '"${inverter.manufacturer}" e modelo "${inverter.modelName}". '
+              'Nenhum registro foi alterado.');
+        }
+        await _isar.inverters.put(inverter);
+      });
 
   /// Edição preserva o ID Isar e bloqueia colisões fabricante+modelo
   /// com OUTROS registros, mas permite manter o mesmo modelo.
@@ -93,51 +102,57 @@ class EquipmentCatalog {
     });
   }
 
-  /// Importação em lote, atômica. Modelos já existentes ou repetidos no
-  /// próprio PDF são ignorados pela chave fabricante + modelo normalizada.
+  /// Seleciona apenas registros ainda ausentes, deduplicando também a lista
+  /// recebida. Cada coleção recebe seu próprio conjunto de chaves.
+  static List<T> uniqueNew<T>(
+    Iterable<T> candidates,
+    Set<String> existingKeys,
+    String Function(T) identity,
+  ) {
+    final seen = <String>{...existingKeys};
+    return [
+      for (final candidate in candidates)
+        if (seen.add(identity(candidate))) candidate,
+    ];
+  }
+
+  /// Importação em lote atômica: consulta duplicidades NO MOMENTO do salvar.
+  /// Registros existentes não são modificados; itens repetidos no PDF ou
+  /// inseridos enquanto o usuário revisava são ignorados.
   Future<EquipmentImportReport> importMany({
     required List<PvModule> modules,
     required List<Inverter> inverters,
-  }) async {
-    final savedModules = await _isar.pvModules.where().findAll();
-    final savedInverters = await _isar.inverters.where().findAll();
-    final moduleKeys = savedModules
-        .map((m) => key(m.manufacturer, m.modelName))
-        .toSet();
-    final inverterKeys = savedInverters
-        .map((i) => key(i.manufacturer, i.modelName))
-        .toSet();
+  }) => _isar.writeTxn(() async {
+        final existingModules = modules.isEmpty
+            ? <PvModule>[]
+            : await _isar.pvModules.where().findAll();
+        final existingInverters = inverters.isEmpty
+            ? <Inverter>[]
+            : await _isar.inverters.where().findAll();
 
-    final newModules = <PvModule>[];
-    final newInverters = <Inverter>[];
-    var skipped = 0;
-    for (final module in modules) {
-      if (moduleKeys.add(key(module.manufacturer, module.modelName))) {
-        newModules.add(module);
-      } else {
-        skipped++;
-      }
-    }
-    for (final inverter in inverters) {
-      if (inverterKeys.add(key(inverter.manufacturer, inverter.modelName))) {
-        newInverters.add(inverter);
-      } else {
-        skipped++;
-      }
-    }
+        final newModules = uniqueNew(
+          modules,
+          existingModules.map((m) => key(m.manufacturer, m.modelName)).toSet(),
+          (PvModule m) => key(m.manufacturer, m.modelName),
+        );
+        final newInverters = uniqueNew(
+          inverters,
+          existingInverters
+              .map((i) => key(i.manufacturer, i.modelName)).toSet(),
+          (Inverter i) => key(i.manufacturer, i.modelName),
+        );
 
-    if (newModules.isNotEmpty || newInverters.isNotEmpty) {
-      await _isar.writeTxn(() async {
         if (newModules.isNotEmpty) await _isar.pvModules.putAll(newModules);
-        if (newInverters.isNotEmpty) await _isar.inverters.putAll(newInverters);
+        if (newInverters.isNotEmpty) {
+          await _isar.inverters.putAll(newInverters);
+        }
+        return EquipmentImportReport(
+          modulesAdded: newModules.length,
+          invertersAdded: newInverters.length,
+          duplicatesSkipped: modules.length + inverters.length -
+              newModules.length - newInverters.length,
+        );
       });
-    }
-    return EquipmentImportReport(
-      modulesAdded: newModules.length,
-      invertersAdded: newInverters.length,
-      duplicatesSkipped: skipped,
-    );
-  }
 
   Future<void> deleteModule(Id id) => _isar.writeTxn(() async {
         await _isar.pvModules.delete(id);
