@@ -1,4 +1,20 @@
-# greencity_os
+# GreenCity OS
+
+Aplicação Flutter de dimensionamento fotovoltaico e catálogo local de
+módulos e inversores. Inclui simulação HSP e sombreamento por cenário,
+cadastro Isar e leitura de datasheets PDF com IA e revisão técnica antes
+da persistência. O cálculo HSP usa a API configurada no projeto.
+
+**Fluxo de IA (modo `auto`):** Google Gemini → OpenRouter → Groq →
+Mistral AI → Cloudflare Workers AI → Cohere. São consultados somente
+provedores com credenciais configuradas; falhas elegíveis ativam o
+próximo da lista, de forma sequencial. Confirme a gratuidade e limites
+da sua conta antes de habilitar cada API.
+
+**Novo Dimensionamento:** ao adicionar módulos a um inversor, o campo
+**Altura do centro do módulo (m)** começa em **0.15 m** (15 cm).
+É apenas o valor inicial editável do formulário; cenários existentes
+não são alterados.
 
 ## Estrutura de Pasta do Projeto
 
@@ -20,7 +36,7 @@ lib/
 └── main.dart          # Ponto de entrada e Injeção de Dependência
 ```
 
-## Configuração local da IA (OpenRouter — somente modelos gratuitos)
+## OpenRouter — modelos gratuitos (fallback do Gemini no modo automático)
 
 1. Copie `.env.example` para `.env` e configure
    `OPENROUTER_API_KEY` com a chave da sua conta.
@@ -101,23 +117,28 @@ minúsculas ou espaços repetidos.
 
 ### Importação de datasheet PDF por IA
 
-1. Configure `OPENROUTER_API_KEY` no **.env local**, além de
-   `OPENROUTER_MODEL` e `OPENROUTER_PDF_ENGINE` se desejar.
-2. Em **Banco de Dados Solar > Adicionar**, escolha
-   **Importar datasheet PDF com IA** (PDF de até 10 MB).
-3. O documento selecionado é enviado ao OpenRouter, que processa o PDF
-   com o motor escolhido e o modelo configurado. A resposta contém uma
-   lista de módulos e inversores; cada modelo é apresentado individualmente.
-4. Confira fabricante, modelo, potência, STC, dimensões e limites MPPT.
-   Você pode **revisar e salvar um por um**, pular modelos, ou usar
-   **Importar todos (se completos)** para registrar a lista de uma vez.
-5. O lote é **atômico**, exige parâmetros essenciais e ignora duplicatas.
-   Campos opcionais não encontrados podem ser guardados como zero no Isar
-   existente (não informado). Confira o datasheet antes de dimensionar.
+1. Copie `.env.example` para `.env`, configure `AI_PROVIDER=auto` e
+   informe a chave do Gemini. O OpenRouter é o primeiro fallback;
+   os demais provedores são opcionais.
+2. Em **Banco de Dados Solar > Adicionar**, selecione
+   **Importar datasheet PDF com IA** (até 10 MB).
+3. No modo automático, **Gemini recebe o PDF diretamente**. Se falhar
+   e o fallback estiver habilitado, o OpenRouter verifica a cota e tenta
+   um modelo gratuito. Groq, Mistral, Cloudflare e Cohere recebem
+   o texto extraído localmente por PyMuPDF, caso sejam acionados.
+4. Confira fabricante, modelo, potência, características STC, dimensões,
+   MPPTs, correntes por MPPT e garantias. Revise e salve individualmente,
+   pule um registro ou use **Importar todos (se completos)**.
+5. **Apenas ao salvar**, o Isar confere fabricante + modelo no mesmo tipo
+   de equipamento. Duplicados são bloqueados no salvamento individual
+   ou ignorados no lote, sem sobrescrever os cadastros existentes.
+   A conferência considera inclusive edições manuais feitas na revisão.
+   A importação em lote utiliza uma transação atômica.
 
-**Privacidade e custo:** somente PDFs escolhidos explicitamente são
-enviados ao OpenRouter e ao provedor de inferência. O modelo escolhido pode
-cobrar tokens e motores de OCR podem cobrar por página.
+**Privacidade e custo:** somente documentos escolhidos pelo usuário são
+encaminhados aos provedores efetivamente acionados. Confirme as cotas e
+condições dos modelos antes dos testes; uma API pode contabilizar uma
+requisição mesmo que o cliente tenha sofrido timeout.
 
 ### Validação no Windows
 
@@ -138,9 +159,10 @@ alheios à correção (Gradle, plugins, .env ou lockfile).
 
 ### Precisão técnica de extração e limites conhecidos
 
-- Os dados são extraídos pelo OpenRouter e **devem ser conferidos na
-  ficha original** antes do dimensionamento. Uma extração parcial não é
-  evidência de que o datasheet não possui os campos.
+- Os dados podem ser extraídos por Gemini ou pelos demais provedores
+  configurados e **devem ser conferidos na ficha original** antes do
+  dimensionamento. Uma extração parcial não é evidência de ausência
+  de parâmetros no datasheet.
 - Potências com unidade explícita W/Wp podem ser convertidas para kW,
   faixas compostas (por exemplo, 80–560 V / 360 V) separadas e códigos
   "3/1" identificados como 3 MPPTs / 1 string. Nenhum intervalo é
@@ -150,12 +172,10 @@ alheios à correção (Gradle, plugins, .env ou lockfile).
   é tentada uma vez. O PDF Base64 não é retransmitido. Na ausência
   dessas annotations, mantém a extração inicial sem tentar novamente.
   A segunda inferência usa quota do modelo gratuito.
-- O banco Isar atual guarda somente uma corrente para todos os MPPTs.
-  Quando o datasheet informa correntes distintas (como 20/16/20 A),
-  a prévia mostra o vetor; a importação em lote fica bloqueada e o
-  salvamento individual requer confirmação de que será armazenado o
-  **MENOR** valor (conservador, mas não equivalente ao equipamento real).
-  A persistência individual por MPPT exige evolução futura do esquema.
+- Correntes diferentes por MPPT são preservadas na configuração JSON
+  do inversor. Os campos numéricos escalares do catálogo usam o **menor
+  limite**, somente para cálculos legados; confirme os vetores individuais
+  antes de dimensionar (por exemplo, AUXSOL 32/16 A e 40/20 A).
 - PDF de até 10 MB; acima de 5 MB o aplicativo avisa sobre o acréscimo
   de aproximadamente 33% do Base64 e oferece cancelamento para que
   o usuário otimize imagens mantendo a legibilidade das tabelas.
@@ -178,6 +198,24 @@ incluir cópias das fichas de terceiros no repositório:
 informar potências CC recomendadas distintas. O extrator deve usar a
 revisão do **PDF selecionado**, nunca substituir seus dados pelos gabaritos.
 
+
+## Novo Dimensionamento: módulos por inversor
+
+Em **Novo Dimensionamento**, crie um sistema com inversor e selecione
+**Adicionar módulos a este inversor**. No formulário **Novo Cenário**,
+o campo **Altura do centro do módulo (m)** inicia em `0.15` (metros).
+O usuário pode editar a altura antes de criar o cenário; o valor é
+validado por `HspInputValidator.validateModuleCenterHeight` e enviado
+ao cálculo HSP como `distanceToGround`. Esta mudança afeta apenas o
+valor pré-preenchido, não altera cenários preexistentes nem a altura
+do obstáculo de sombreamento.
+
+Para testes no Android, execute `flutter devices` e
+`flutter run -d <ID_DO_DISPOSITIVO>`. As APIs Gemini e OpenRouter
+utilizam HTTP, mas os provedores que dependem de extração de texto
+com PyMuPDF requerem adaptação multiplataforma ou um backend:
+`Process.run(python)` não está disponível da mesma forma no Android.
+**Nunca distribua APKs com chaves de API em `.env`.**
 
 ## Testes locais de datasheets via Ollama (Windows)
 
@@ -258,24 +296,28 @@ mesmo em caso de erro.
 
 ## Roteador de IA multicloud — extração de datasheets
 
-Ative `AI_PROVIDER=auto` no `.env` local. A ordem de prioridade, sem
+Ative `AI_PROVIDER=auto` no `.env` local e configure
+`GEMINI_API_KEY`. `OPENROUTER_API_KEY` é opcional, mas recomendado
+como fallback. A ordem de prioridade, sem
 paralelismo e sem ciclos, é:
 
-1. OpenRouter (somente modelos `:free` já validados pela política do app)
-2. Google Gemini (PDF nativo)
+1. **Google Gemini** (PDF nativo, primeiro provedor)
+2. **OpenRouter** (somente modelos `:free` validados pela política do app)
 3. Groq (texto PyMuPDF)
 4. Mistral AI (texto PyMuPDF)
 5. Cloudflare Workers AI (texto PyMuPDF)
 6. Cohere (texto PyMuPDF)
 
-O OpenRouter é consultado primeiro em `GET /api/v1/key` para conferir
-`free_model_daily_requests.remaining` e `limit_remaining`. Uma
-resposta zero pula para Gemini **sem enviar o PDF ao OpenRouter**.
-Essa consulta **não garante** que não haverá limitação por minuto ou
-falha do modelo: HTTP 402/429/5xx durante a inferência também pode levar
-ao provedor seguinte. Quando o endpoint de quota não responde, o app
-tenta a chamada real, pois a ausência de informação não comprova
-limite esgotado.
+**O Gemini é tentado antes de qualquer consulta ao OpenRouter.**
+Se o Gemini concluir a extração, o OpenRouter nem sequer tem sua cota
+consultada. Caso o Gemini falhe e o fallback esteja habilitado, o
+OpenRouter consulta `GET /api/v1/key` para conferir
+`free_model_daily_requests.remaining` e `limit_remaining`.
+Cota esgotada faz a cadeia avançar ao Groq. A consulta não garante
+disponibilidade por minuto ou por modelo: HTTP 402/429/5xx durante a
+inferência também pode acionar o fallback. Se a consulta de cota
+falhar, o estado da cota é considerado desconhecido e a inferência
+é tentada; não se presume esgotamento.
 
 Somente provedores com credenciais configuradas são tentados.
 `AI_CLOUD_FALLBACK_ENABLED=true` autoriza o envio sequencial do mesmo

@@ -17,7 +17,16 @@ typedef OpenRouterCapacityCheck = Future<bool?> Function(String apiKey);
 /// Seleciona provedor explícito ou executa sequência automática de APIs.
 /// AI_PROVIDER=auto tem precedência sobre OLLAMA_ENABLED legado.
 class DatasheetAiService {
-  static const order = CloudAiProvider.values;
+  // Prioridade explícita: Gemini primeiro, OpenRouter como primeiro fallback.
+  // Não depender da ordem do enum para preservar o contrato com o usuário.
+  static const List<CloudAiProvider> order = [
+    CloudAiProvider.gemini,
+    CloudAiProvider.openRouter,
+    CloudAiProvider.groq,
+    CloudAiProvider.mistral,
+    CloudAiProvider.cloudflare,
+    CloudAiProvider.cohere,
+  ];
 
   final bool? _ollamaEnabledOverride;
   final String? _modeOverride;
@@ -85,7 +94,7 @@ class DatasheetAiService {
         return 'Extração via ${_lastProvider!.label}; '
             'fallback entre provedores configurados.';
       }
-      return 'Roteamento automático: OpenRouter, Gemini, Groq, '
+      return 'Roteamento automático: Gemini, OpenRouter, Groq, '
           'Mistral, Cloudflare e Cohere.';
     }
     return useOllama

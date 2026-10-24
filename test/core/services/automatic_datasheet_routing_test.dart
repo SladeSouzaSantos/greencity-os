@@ -25,12 +25,64 @@ void main() {
     ], 'inverters': [],
   });
 
-  test('quota diária OpenRouter esgotada pula diretamente ao Gemini', () async {
+  test('Gemini tem prioridade sobre OpenRouter com ambos configurados',
+      () async {
+    final attempts = <CloudAiProvider>[];
+    var checkedOpenRouter = 0;
+    final route = DatasheetAiService(
+      aiProvider: 'auto', cloudFallbackEnabled: true,
+      configuredProviders: {
+        CloudAiProvider.gemini, CloudAiProvider.openRouter,
+      },
+      openRouterCapacityCheck: (_) async { checkedOpenRouter++; return true; },
+      openRouterExtractor: (_) async {
+        attempts.add(CloudAiProvider.openRouter);
+        return fixture;
+      },
+      cloudExtractor: (provider, path) async {
+        attempts.add(provider);
+        return fixture;
+      },
+    );
+    await route.extractEquipmentData(pdf.path);
+    expect(attempts, [CloudAiProvider.gemini]);
+    expect(checkedOpenRouter, 0,
+        reason: 'Nenhuma consulta ao OpenRouter antes do Gemini funcionar');
+    expect(route.providerDescription, contains('Google Gemini'));
+  });
+
+  test('Gemini falha, OpenRouter tem cota disponível e é selecionado',
+      () async {
+    final attempts = <CloudAiProvider>[];
+    var checks = 0;
+    final route = DatasheetAiService(
+      aiProvider: 'auto', cloudFallbackEnabled: true,
+      configuredProviders: {
+        CloudAiProvider.gemini, CloudAiProvider.openRouter,
+        CloudAiProvider.groq,
+      },
+      openRouterCapacityCheck: (_) async { checks++; return true; },
+      openRouterExtractor: (_) async {
+        attempts.add(CloudAiProvider.openRouter);
+        return fixture;
+      },
+      cloudExtractor: (provider, path) async {
+        attempts.add(provider);
+        throw CloudProviderFailure('limite_requisicoes', '429');
+      },
+    );
+    await route.extractEquipmentData(pdf.path);
+    expect(attempts, [CloudAiProvider.gemini, CloudAiProvider.openRouter]);
+    expect(checks, 1);
+    expect(route.providerDescription, contains('OpenRouter'));
+  });
+
+  test('Gemini falha e OpenRouter sem cota: continua no Groq', () async {
     final called = <CloudAiProvider>[];
     final route = DatasheetAiService(
       aiProvider: 'auto', cloudFallbackEnabled: true,
       configuredProviders: {
-        CloudAiProvider.openRouter, CloudAiProvider.gemini,
+        CloudAiProvider.gemini, CloudAiProvider.openRouter,
         CloudAiProvider.groq,
       },
       openRouterCapacityCheck: (_) async => false,
@@ -40,33 +92,15 @@ void main() {
       },
       cloudExtractor: (provider, path) async {
         called.add(provider);
-        return fixture;
-      },
-    );
-    final result = await route.extractEquipmentData(pdf.path);
-    expect(result.modules.single.powerWp, 690);
-    expect(called, [CloudAiProvider.gemini]);
-    expect(route.providerDescription, contains('Google Gemini'));
-  });
-
-  test('quota disponível prioriza OpenRouter e não acessa os demais', () async {
-    var secondary = 0;
-    final route = DatasheetAiService(
-      aiProvider: 'auto',
-      cloudFallbackEnabled: true,
-      configuredProviders: {
-        CloudAiProvider.openRouter, CloudAiProvider.gemini,
-      },
-      openRouterCapacityCheck: (_) async => true,
-      openRouterExtractor: (_) async => fixture,
-      cloudExtractor: (_, __) async {
-        secondary++;
+        if (provider == CloudAiProvider.gemini) {
+          throw CloudProviderFailure('limite_requisicoes', '429');
+        }
         return fixture;
       },
     );
     await route.extractEquipmentData(pdf.path);
-    expect(secondary, 0);
-    expect(route.providerDescription, contains('OpenRouter'));
+    expect(called, [CloudAiProvider.gemini, CloudAiProvider.groq]);
+    expect(route.providerDescription, contains('Groq'));
   });
 
   test('limite na inferência após preflight avança na ordem configurada',
@@ -88,7 +122,7 @@ void main() {
     );
     await route.extractEquipmentData(pdf.path);
     expect(attempts, [
-      CloudAiProvider.openRouter, CloudAiProvider.gemini,
+      CloudAiProvider.gemini, CloudAiProvider.openRouter,
       CloudAiProvider.groq, CloudAiProvider.mistral,
     ]);
     expect(route.providerDescription, contains('Mistral'));
@@ -115,35 +149,39 @@ void main() {
     expect(route.providerDescription, contains('Cohere'));
   });
 
-  test('erro 400 inválido não retransmite PDF para outro provedor', () async {
-    var gemini = 0;
+  test('erro 400 do Gemini não retransmite PDF ao OpenRouter',
+      () async {
+    var calledOpenRouter = 0;
     final route = DatasheetAiService(
       aiProvider: 'auto', cloudFallbackEnabled: true,
       configuredProviders: {
-        CloudAiProvider.openRouter, CloudAiProvider.gemini,
+        CloudAiProvider.gemini, CloudAiProvider.openRouter,
       },
       openRouterCapacityCheck: (_) async => true,
-      openRouterExtractor: (_) async =>
+      openRouterExtractor: (_) async {
+        calledOpenRouter++;
+        return fixture;
+      },
+      cloudExtractor: (_, __) async =>
           throw CloudProviderFailure('requisicao_invalida', 'PDF inválido',
             allowFallback: false, httpStatus: 400),
-      cloudExtractor: (_, __) async { gemini++; return fixture; },
     );
     await expectLater(route.extractEquipmentData(pdf.path),
       throwsA(isA<StateError>()));
-    expect(gemini, 0);
+    expect(calledOpenRouter, 0);
   });
 
-  test('fallback desligado preserva primeiro erro mesmo após 429', () async {
+  test('fallback desligado preserva erro do Gemini sem OpenRouter', () async {
     var called = 0;
     final route = DatasheetAiService(
       aiProvider: 'auto', cloudFallbackEnabled: false,
       configuredProviders: {
-        CloudAiProvider.openRouter, CloudAiProvider.gemini,
+        CloudAiProvider.gemini, CloudAiProvider.openRouter,
       },
       openRouterCapacityCheck: (_) async => true,
-      openRouterExtractor: (_) async =>
+      openRouterExtractor: (_) async { called++; return fixture; },
+      cloudExtractor: (_, __) async =>
           throw CloudProviderFailure('limite_requisicoes', '429'),
-      cloudExtractor: (_, __) async { called++; return fixture; },
     );
     await expectLater(route.extractEquipmentData(pdf.path), throwsStateError);
     expect(called, 0);
