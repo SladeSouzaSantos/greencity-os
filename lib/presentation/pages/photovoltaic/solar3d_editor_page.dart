@@ -315,32 +315,47 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         !doc.excludedIds.contains(o.id)).toList());
   }
 
-  Map<String, double?> _previewShadows(Solar3dSunPosition sun) {
+  /// Detailed ray sampling distinguishes:
+  /// - a shadow cast on the GROUND,
+  /// - a ray actually intercepted on each MODULE FRONT FACE,
+  /// - no direct incidence on the front face (null, not 0% loss).
+  Map<String, Solar3dPanelShadeInspection?> _previewShadows(
+      Solar3dSunPosition sun) {
     final scene = analysisScene;
-    final result = <String, double?>{};
+    final result = <String, Solar3dPanelShadeInspection?>{};
     if (!sun.aboveHorizon) return result;
     final panels = scene.objects.where(
       (o) => o.kind == Solar3dObjectKind.panel,
     ).toList();
-    // Restrict synchronous per-frame raycasting on large projects.
-    // Selecting a panel still prioritizes that panel in the preview.
+    // Cap synchronous work: selected module sampled at 12x8, others at
+    // 8x6. Detailed MONTHLY simulation still uses separate hourly POA.
     final first = selected;
     final candidates = <Solar3dObject>[
       if (first != null && first.kind == Solar3dObjectKind.panel &&
           panels.any((o) => o.id == first.id)) first,
-      ...panels.where((o) => o.id != first?.id).take(35),
+      ...panels.where((o) => o.id != first?.id).take(24),
     ];
     for (final panel in candidates) {
-      result[panel.id] = Solar3dGeometricShading.blockedFraction(
+      result[panel.id] = Solar3dGeometricShading.inspectPanel(
         panel: panel,
         scene: scene,
         sunAzimuthDegrees: sun.azimuthDegrees,
         sunElevationDegrees: sun.elevationDegrees,
-        rows: 6, columns: 4,
+        rows: first?.id == panel.id ? 12 : 8,
+        columns: first?.id == panel.id ? 8 : 6,
       );
     }
     return result;
   }
+
+  static double _panelLowestPoint(Solar3dObject panel) =>
+      panel.center.y -
+      panel.depth / 2 * math.sin(panel.tiltDegrees * math.pi / 180) -
+      panel.height / 2 * math.cos(panel.tiltDegrees * math.pi / 180);
+
+  bool _panelCrossesTerrain(Solar3dObject panel) =>
+      panel.kind == Solar3dObjectKind.panel &&
+      _panelLowestPoint(panel) < -0.0001;
 
   Future<void> _calculate() async {
     final doc = document;
@@ -354,6 +369,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     }
     if (panels.length > 30) {
       _notice('Análise de pesquisa limitada a 30 placas; reduza a seleção.');
+      return;
+    }
+    if (panels.any(_panelCrossesTerrain)) {
+      _notice('Uma ou mais placas atravessam o terreno. Ajuste a altura '
+          'do centro ou a inclinação antes de calcular perdas mensais.');
       return;
     }
     final groups = <String, List<Solar3dObject>>{};
@@ -636,7 +656,14 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     final current = selected;
     final mpptSystem = current == null ? null : _systemFor(current.id);
     final sun = _sun;
-    final previewShades = _previewShadows(sun);
+    final inspections = _previewShadows(sun);
+    final previewShades = <String, double?>{
+      for (final entry in inspections.entries)
+        entry.key: entry.value?.fraction,
+    };
+    final terrainCrossingPanels = doc.scene.objects.where(
+      _panelCrossesTerrain,
+    ).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Análise 3D · GreenCity OS'),
         actions: [
@@ -762,12 +789,63 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           onChanged: (value) => setState(() =>
               previewMinutes = value.round()),
         ),
-        if (current != null && current.kind == Solar3dObjectKind.panel)
-          Text('Placa selecionada: ${!sun.aboveHorizon ? "sem Sol direto" :
-              previewShades[current.id] == null ? "sem feixe direto na face" :
-              "${((previewShades[current.id] ?? 0) * 100).toStringAsFixed(1)}% "
-              "da área bloqueada"}'
-              ' · estimativa geométrica, não perda elétrica'),
+        if (terrainCrossingPanels.isNotEmpty)
+          Card(child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text('Geometria inconsistente: '
+              '${terrainCrossingPanels.length} placa(s) atravessam o '
+              'plano do terreno devido à altura central e inclinação. '
+              'A posição do Sol está correta, mas os resultados de '
+              'sombreamento dessas placas não são confiáveis. '
+              'Ajuste a altura antes do cálculo mensal.'),
+          )),
+        if (current != null && current.kind == Solar3dObjectKind.panel) ...[
+          Text('Placa ${current.id}: '
+            '${!sun.aboveHorizon
+              ? "noite; sem Sol direto"
+              : inspections[current.id] == null
+                ? "sem incidência solar direta na face frontal"
+                : "${(inspections[current.id]!.fraction * 100).toStringAsFixed(1)}% "
+                  "da face bloqueada "
+                  "(${inspections[current.id]!.blockedSamples}/"
+                  "${inspections[current.id]!.totalSamples} pontos)"}'),
+          if (inspections[current.id] != null)
+            Text(inspections[current.id]!.firstHitByObject.isEmpty
+              ? 'Nenhum obstáculo interceptou os raios amostrados '
+                'desta placa neste horário.'
+              : 'Primeiro bloqueio dos raios por: '
+                '${inspections[current.id]!.firstHitByObject.entries.map(
+                  (e) => "${e.key} (${e.value} pontos)"
+                ).join(", ")}'),
+        ],
+        if (sun.aboveHorizon && inspections.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          const Text('Sombreamento por placa agora '
+              '(fração geométrica da face frontal; não energia):'),
+          Wrap(spacing: 6, runSpacing: 4, children: [
+            for (final entry in inspections.entries)
+              ActionChip(
+                label: Text('${entry.key.split("/").last} · '
+                  '${entry.value == null ? "sem feixe" :
+                    "${(entry.value!.fraction * 100).round()}%"}'),
+                avatar: Icon(
+                  entry.value == null
+                    ? Icons.nightlight_outlined
+                    : entry.value!.fraction > .01
+                      ? Icons.warning_amber_rounded
+                      : Icons.wb_sunny_outlined,
+                  size: 15,
+                  color: entry.value != null &&
+                      entry.value!.fraction > .01
+                      ? Colors.deepOrange : null,
+                ),
+                onPressed: () => setState(() => selectedId = entry.key),
+              ),
+          ]),
+        ],
+        const Text('As porcentagens acima descrevem a face iluminada '
+            'e não a sombra projetada no chão. A simulação óptica por '
+            'placa não equivale a perdas elétricas das strings/MPPTs.'),
         const Text('As sombras seguem a trajetória solar calculada para '
             'a latitude/longitude e a data/hora escolhidas. '
             'O fuso é ajustável (padrão UTC−3), pois depende do projeto.'),
@@ -803,11 +881,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                 icon: const Icon(Icons.height_outlined),
                 label: const Text('Usar altura do centro cadastrada'),
               ),
-            if (current.center.y -
-                current.depth / 2 * math.sin(
-                  current.tiltDegrees * math.pi / 180) -
-                current.height / 2 * math.cos(
-                  current.tiltDegrees * math.pi / 180) < 0)
+            if (_panelCrossesTerrain(current))
               const Text('Atenção: parte da placa pode atravessar o '
                   'plano do terreno. Confira altura e inclinação.'),
           ],
