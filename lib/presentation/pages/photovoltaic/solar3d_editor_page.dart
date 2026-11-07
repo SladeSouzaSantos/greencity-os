@@ -35,6 +35,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Solar3dSceneStorage? storage;
   // Freeze framing during edits, so dragging does not recenter the scene.
   Solar3dScene? cameraFrameScene;
+  Solar3dScene? catalogInitialScene;
   String? draggingId;
   Solar3dVector? dragStartCenter;
   Solar3dVector? dragStartWorld;
@@ -68,6 +69,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       final scene = Solar3dPlanFactory.fromSystems(widget.systems);
       document = Solar3dSceneDocument(scene: scene);
       cameraFrameScene = scene;
+      catalogInitialScene = scene;
       selectedId = scene.objects.firstWhere((o) =>
           o.kind == Solar3dObjectKind.panel).id;
       storage = Solar3dSceneStorage([
@@ -196,7 +198,28 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     ));
   }
 
-   void _toggle({required bool visibility}) {
+   double? _registeredCenterHeight(String objectId) {
+    final base = catalogInitialScene;
+    if (base == null) return null;
+    for (final object in base.objects) {
+      if (object.id == objectId &&
+          object.kind == Solar3dObjectKind.panel) {
+        return object.center.y;
+      }
+    }
+    return null;
+  }
+
+  void _restoreRegisteredHeight() {
+    final panel = selected;
+    if (panel == null || panel.kind != Solar3dObjectKind.panel) return;
+    final height = _registeredCenterHeight(panel.id);
+    if (height == null) return;
+    _replace(panel.copyWith(center: Solar3dVector(
+      panel.center.x, height, panel.center.z)));
+  }
+
+  void _toggle({required bool visibility}) {
     final doc = document!;
     final id = selectedId;
     if (id == null) return;
@@ -769,7 +792,17 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               'Norte ${current.center.z.toStringAsFixed(2)}'),
           if (current.kind == Solar3dObjectKind.panel) ...[
             Text('Altura do CENTRO da placa ao solo: '
-                '${current.center.y.toStringAsFixed(3)} m'),
+                '${current.center.y.toStringAsFixed(3)} m'
+                ' · Cadastro: '
+                '${_registeredCenterHeight(current.id)?.toStringAsFixed(3) ?? "?"} m'),
+            if (_registeredCenterHeight(current.id) != null &&
+                (current.center.y -
+                  _registeredCenterHeight(current.id)!).abs() > .0001)
+              OutlinedButton.icon(
+                onPressed: _restoreRegisteredHeight,
+                icon: const Icon(Icons.height_outlined),
+                label: const Text('Usar altura do centro cadastrada'),
+              ),
             if (current.center.y -
                 current.depth / 2 * math.sin(
                   current.tiltDegrees * math.pi / 180) -
