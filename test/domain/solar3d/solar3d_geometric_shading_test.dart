@@ -76,6 +76,61 @@ void main() {
       columns: 2), throwsFormatException);
   });
 
+  test('Sombra às 17h pode atingir uma placa e não a vizinha', () {
+    // A morning/evening low-angle beam can hit one module yet pass
+    // ABOVE an obstacle for another module farther from that obstacle.
+    const free = Solar3dObject(
+      id: 'M01', kind: Solar3dObjectKind.panel,
+      center: Solar3dVector(0, 1, 0),
+      width: 1, depth: 2, height: .05, mpptIndex: 1,
+    );
+    const shaded = Solar3dObject(
+      id: 'M02', kind: Solar3dObjectKind.panel,
+      center: Solar3dVector(4, 1, 0),
+      width: 1, depth: 2, height: .05, mpptIndex: 2,
+    );
+    const obstacle = Solar3dObject(
+      id: 'wall', kind: Solar3dObjectKind.obstacle,
+      center: Solar3dVector(6, 1.5, 0),
+      width: 1.6, depth: 3, height: 3,
+    );
+    const scene = Solar3dScene([free, shaded, obstacle]);
+    final clear = Solar3dGeometricShading.inspectPanel(
+      panel: free, scene: scene,
+      sunAzimuthDegrees: 90, sunElevationDegrees: 30,
+      rows: 12, columns: 8,
+    );
+    final blocked = Solar3dGeometricShading.inspectPanel(
+      panel: shaded, scene: scene,
+      sunAzimuthDegrees: 90, sunElevationDegrees: 30,
+      rows: 12, columns: 8,
+    );
+    expect(clear, isNotNull);
+    expect(blocked, isNotNull);
+    expect(clear!.totalSamples, 96);
+    expect(clear.blockedSamples, 0);
+    expect(blocked!.fraction, greaterThan(.5));
+    expect(blocked.firstHitByObject['wall'], greaterThan(0));
+  });
+
+  test('O diagnóstico diferencia sombra de ausência de feixe frontal', () {
+    final inspected = Solar3dGeometricShading.inspectPanel(
+      panel: panel, scene: const Solar3dScene([panel]),
+      sunAzimuthDegrees: 90, sunElevationDegrees: -3,
+      rows: 12, columns: 8,
+    );
+    expect(inspected, isNull);
+    final sunlight = Solar3dGeometricShading.inspectPanel(
+      panel: panel, scene: const Solar3dScene([panel]),
+      sunAzimuthDegrees: 90, sunElevationDegrees: 30,
+      rows: 12, columns: 8,
+    );
+    expect(sunlight, isNotNull);
+    expect(sunlight!.fraction, 0);
+    expect(sunlight.blockedSamples, 0);
+    expect(sunlight.firstHitByObject, isEmpty);
+  });
+
   test('Valida geometria, IDs duplicados e atribuição ao MPPT', () {
     expect(() => Solar3dScene([panel, panel]).validate(),
       throwsFormatException);
