@@ -74,7 +74,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         monthly = {};
       });
     } catch (err) {
-      if (mounted) _notice('Não foi possível abrir a cena salva: $err');
+      if (mounted) {
+      _notice('Não foi possível abrir a cena salva: $err');
+    }
     }
   }
 
@@ -285,7 +287,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         }
         output[m] = values;
       }
-      if (mounted) setState(() => monthly = output);
+      if (mounted) {
+        setState(() => monthly = output);
+      }
     } catch (err) {
       _notice('Falha no cálculo horário: $err. Confirme o endpoint local/DEV.');
     } finally {
