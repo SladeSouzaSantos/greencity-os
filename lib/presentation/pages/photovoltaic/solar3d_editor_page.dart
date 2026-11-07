@@ -368,15 +368,21 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       return;
     }
     final current = selected;
-    if (current == null || current.id != id) return;
+    if (current == null || current.id != id) {
+      return;
+    }
     final world = projection.pointOnHorizontalPlane(
       details.localPosition, start.y);
     final east = start.x + world.x - anchor.x;
     final north = start.z + world.z - anchor.z;
     if (!east.isFinite || !north.isFinite ||
-        east.abs() > 500 || north.abs() > 500) return;
+        east.abs() > 500 || north.abs() > 500) {
+      return;
+    }
     if ((east - current.center.x).abs() < .0001 &&
-        (north - current.center.z).abs() < .0001) return;
+        (north - current.center.z).abs() < .0001) {
+      return;
+    }
     _replace(current.copyWith(center: Solar3dVector(east, start.y, north)));
   }
 
