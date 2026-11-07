@@ -453,7 +453,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           _adjustButtons(),
           Text('Azimute do objeto: ${current.azimuthDegrees.toStringAsFixed(0)}°'),
           Slider(
-            value: current.azimuthDegrees.clamp(0.0, 359.9),
+            value: current.azimuthDegrees.clamp(0.0, 359.9).toDouble(),
             min: 0, max: 359.9,
             onChanged: (v) => _replace(current.copyWith(azimuthDegrees: v)),
           ),
@@ -467,19 +467,19 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           ] else ...[
             Text('Largura: ${current.width.toStringAsFixed(2)} m'),
             Slider(
-              value: current.width.clamp(0.2, 20.0),
+              value: current.width.clamp(0.2, 20.0).toDouble(),
               min: 0.2, max: 20,
               onChanged: (v) => _replace(current.copyWith(width: v)),
             ),
             Text('Profundidade: ${current.depth.toStringAsFixed(2)} m'),
             Slider(
-              value: current.depth.clamp(0.2, 20.0),
+              value: current.depth.clamp(0.2, 20.0).toDouble(),
               min: 0.2, max: 20,
               onChanged: (v) => _replace(current.copyWith(depth: v)),
             ),
             Text('Altura do obstáculo: ${current.height.toStringAsFixed(2)} m'),
             Slider(
-              value: current.height.clamp(0.2, 20.0),
+              value: current.height.clamp(0.2, 20.0).toDouble(),
               min: 0.2, max: 20,
               onChanged: (v) => _replace(current.copyWith(height: v)),
             ),
