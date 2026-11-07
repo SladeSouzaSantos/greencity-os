@@ -212,3 +212,68 @@ simplificada e não um ambiente Three.js com seleção/perspectiva GPU completa.
   fracionários ou transições de horário de verão não são modelados
   pela prévia. A data/hora solar mostrada deve ser entendida como
   horário civil de referência informado pelo usuário.
+
+## Diagnóstico 17h e HTTP 404 (07/11/2026)
+
+### Quando uma placa indica 0% e outra tem sombra
+
+Existem dois recursos distintos na cena: (1) casco escuro no TERRENO
+— projeção visual de objetos; (2) raio incidente amostrado na FACE
+FRONTAL de cada placa — calcula fração geométrica bloqueada,
+não perda de potência. Um obstáculo pode sombrear apenas parte
+das placas ao final da tarde mesmo projetando uma sombra grande no
+solo. Ainda assim é obrigatório verificar orientação, altitude e
+bloqueadores, sobretudo se a altura central do módulo colocar a
+placa atravessando o plano do terreno.
+
+No editor, selecione qualquer placa e veja: `N pontos bloqueados / total`
+e quais obstáculos foram primeiro interceptados pelos raios.
+A prévia do painel selecionado usa 12×8 amostras (96 pontos);
+outras placas usam 8×6 (48 pontos), até limite de prévia. Uma
+sombra muito fina pode escapar da malha; os valores não são uma
+simulação celular nem estimativa elétrica certificada. O resultado
+`sem incidência direta na face` é diferente de **0% sombreado**.
+
+Se um módulo cruza o chão, a interface avisará e bloqueará a
+estimativa mensal até ajustar as dimensões/altura. Não reajusta
+automaticamente a altura central digitada no dimensionamento.
+
+### Erro 404 ao calcular perdas mensais
+
+Esse erro é esperado se a aplicação tenta acessar a rota
+`https://hsp.greencity.net.br/api/recurso-solar/horario`,
+**não implantada** em produção. Não são os containers
+`hsp-solar3d-lab-*` que oferecem essa rota. No Windows, em
+outro PowerShell na pasta do repositório HSP Simulator:
+
+```powershell
+git fetch origin
+git switch feature/hourly-resource-api
+git pull --ff-only
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m uvicorn api:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Abra `http://127.0.0.1:8000/docs` para confirmar a presença
+de `/recurso-solar/horario`. Não basta abrir o endereço da
+rota GET no navegador: **o endpoint é POST**. Na tela Flutter,
+o campo **Endpoint horário HSP** é editável sem recompilar;
+clique em **Usar API local Windows · porta 8000**, selecione
+mês 1 de 2023 e execute a consulta. Requer acesso à NASA POWER.
+
+### Parar/remover somente o Solar 3D Lab antigo
+
+```powershell
+docker rm -f hsp-solar3d-lab-solar3d-web-1 hsp-solar3d-lab-solar3d-api-1
+docker ps
+```
+
+Esses dois containers servem o laboratório web local da branch
+`feature/solar3d-lab` (`127.0.0.1:5174` e API interna) e
+**não** são necessários para o editor Flutter nativo nem para
+a rota horária do HSP executada por `uvicorn api:app` local.
+
+Não remova os containers `phasscode-platform-*`, Redis ou
+PostgreSQL. Não rode `docker system prune` nem `down -v`.
