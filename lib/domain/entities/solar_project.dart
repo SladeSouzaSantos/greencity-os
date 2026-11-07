@@ -1,6 +1,7 @@
 import 'hsp.dart';
 import 'solar_system.dart';
 import 'solar_climate.dart';
+import '../solar3d/solar3d_optical_correction.dart';
 
 class SolarProject {
   String clientName;
@@ -14,6 +15,13 @@ class SolarProject {
   List<SolarSystem> systems;
   SolarClimate? climate;
   Hsp? referenceHspHorizontal;
+
+  /// Opt-in optical-only correction for the ACTIVE design session.
+  /// Not persisted as an approved engineering estimate or quoted yield.
+  Solar3dOpticalCorrection? opticalCorrection;
+
+  bool get hasAppliedOpticalCorrection =>
+      opticalCorrection?.isValidFor(systems) ?? false;
 
   SolarProject({
     required this.clientName,
@@ -33,33 +41,38 @@ class SolarProject {
   double get totalProjectPowerWp => 
       systems.fold(0, (sum, sys) => sum + (sys.totalSystemPower/1000));
   
-  List<int> get totalMonthlyGeneration {
-    List<int> totals = List.filled(12, 0);
-
-    List<double>? tMaxList = climate?.tempMaxMonthly;
-    
-    for (var system in systems) {
-      for (int mes = 0; mes < 12; mes++) {
-        totals[mes] += system.calculateSystemGenerationForMonth(mes, tMaxList);
+  List<int> _monthlyGeneration({required bool applyOptical}) {
+    final totals = List<int>.filled(12, 0);
+    final tMaxList = climate?.tempMaxMonthly;
+    final applied = applyOptical && hasAppliedOpticalCorrection
+        ? opticalCorrection : null;
+    for (final system in systems) {
+      for (var month = 0; month < 12; month++) {
+        totals[month] += system.calculateSystemGenerationForMonth(
+          month,
+          tMaxList,
+          opticalRetentionByMppt:
+              applied?.retentionBySystemMppt[system.id],
+        );
       }
     }
     return totals;
   }
 
-  int get totalAverageAnnualGeneration {
-    if (systems.isEmpty) return 0;
-    
-    List<double>? tMaxList = climate?.tempMaxMonthly;
+  List<int> get baselineMonthlyGeneration =>
+      _monthlyGeneration(applyOptical: false);
 
-    double totalAnual = 0.0;
-    
-    for (var system in systems) {
-      for (int mes = 0; mes < 12; mes++) {
-        totalAnual += system.calculateSystemGenerationForMonth(mes, tMaxList);
-      }
-    }
-        
-    return (totalAnual / 12).floor(); 
+  List<int> get totalMonthlyGeneration =>
+      _monthlyGeneration(applyOptical: true);
+
+  int get baselineAverageAnnualGeneration {
+    final totals = baselineMonthlyGeneration;
+    return totals.reduce((sum, value) => sum + value) ~/ 12;
+  }
+
+  int get totalAverageAnnualGeneration {
+    final totals = totalMonthlyGeneration;
+    return totals.reduce((sum, value) => sum + value) ~/ 12;
   }
   
   @override
