@@ -8,6 +8,7 @@ import '../../../domain/solar3d/solar3d_geometric_shading.dart';
 class Solar3dProjection {
   final Size size;
   final Solar3dScene scene;
+  final Solar3dScene? frameScene;
   final double yaw;
   final double pitch;
   final double zoom;
@@ -16,10 +17,12 @@ class Solar3dProjection {
   late final double scale;
 
   Solar3dProjection({
-    required this.size, required this.scene,
+    required this.size, required this.scene, this.frameScene,
     required this.yaw, required this.pitch, required this.zoom,
   }) {
-    final objects = scene.objects;
+    // Keep the camera frame fixed while dragging objects; otherwise
+    // the scene recenters on every frame and the item appears to resist.
+    final objects = (frameScene ?? scene).objects;
     final minX = objects.map((o) => o.center.x - o.width / 2)
         .reduce(math.min);
     final maxX = objects.map((o) => o.center.x + o.width / 2)
@@ -46,9 +49,27 @@ class Solar3dProjection {
     final z = point.z - origin.z;
     final right = x * math.cos(yaw) + z * math.sin(yaw);
     final forward = -x * math.sin(yaw) + z * math.cos(yaw);
-    final up = y * math.cos(pitch) - forward * math.sin(pitch);
+    // North projects upwards and East projects right at yaw=0.
+    final up = y * math.cos(pitch) + forward * math.sin(pitch);
     return Offset(size.width / 2 + right * scale,
         size.height / 2 - up * scale);
+  }
+
+  /// Inverse of [project] restricted to a horizontal plane at [elevation].
+  /// Screen dragging therefore moves East/North without changing height,
+  /// regardless of camera rotation or tilt. The view must be held fixed
+  /// for the duration of a gesture.
+  Solar3dVector pointOnHorizontalPlane(Offset screen, double elevation) {
+    if (math.sin(pitch).abs() < 1e-6) {
+      throw StateError('Camera parallel to ground; cannot drag on plane');
+    }
+    final right = (screen.dx - size.width / 2) / scale;
+    final up = (size.height / 2 - screen.dy) / scale;
+    final forward = (up - (elevation - origin.y) * math.cos(pitch)) /
+        math.sin(pitch);
+    final east = right * math.cos(yaw) - forward * math.sin(yaw);
+    final north = right * math.sin(yaw) + forward * math.cos(yaw);
+    return Solar3dVector(origin.x + east, elevation, origin.z + north);
   }
 
   double depth(Solar3dVector point) {
@@ -86,6 +107,7 @@ class Solar3dProjection {
 
 class Solar3dScenePainter extends CustomPainter {
   final Solar3dScene scene;
+  final Solar3dScene? frameScene;
   final Set<String> hiddenIds;
   final Set<String> excludedIds;
   final String? selectedId;
@@ -93,7 +115,7 @@ class Solar3dScenePainter extends CustomPainter {
   final Map<String, double?> directShadeByPanel;
 
   Solar3dScenePainter({
-    required this.scene, required this.hiddenIds,
+    required this.scene, this.frameScene, required this.hiddenIds,
     required this.excludedIds, required this.selectedId,
     required this.yaw, required this.pitch, required this.zoom,
     required this.directShadeByPanel,
@@ -104,7 +126,8 @@ class Solar3dScenePainter extends CustomPainter {
     final bg = Paint()..color = const Color(0xff10222d);
     canvas.drawRect(Offset.zero & size, bg);
     final view = Solar3dProjection(
-      size: size, scene: scene, yaw: yaw, pitch: pitch, zoom: zoom);
+      size: size, scene: scene, frameScene: frameScene,
+      yaw: yaw, pitch: pitch, zoom: zoom);
 
     // Ground grid with real metre spacing; visual only.
     final grid = Paint()
@@ -177,6 +200,46 @@ class Solar3dScenePainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     title.paint(canvas, const Offset(10,10));
+    _paintCompass(canvas, size, view);
+  }
+
+  void _paintCompass(Canvas canvas, Size size, Solar3dProjection view) {
+    // Geographic headings are projected using the SAME camera transform
+    // as the panels. This is a true world-locked compass, not screen North.
+    const radius = 43.0;
+    final c = Offset(math.max(radius + 8, size.width - radius - 12),
+        radius + 16);
+    canvas.drawCircle(c, radius + 7, Paint()
+      ..color = const Color(0xff10222d).withValues(alpha: .92));
+    canvas.drawCircle(c, radius, Paint()
+      ..color = const Color(0xff93b0c4)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke);
+    final pivot = view.project(view.origin);
+    final headings = <(String, Solar3dVector, Color)>[
+      ('N', const Solar3dVector(0, 0, 1), const Color(0xffffaa68)),
+      ('S', const Solar3dVector(0, 0, -1), const Color(0xffbfced7)),
+      ('L', const Solar3dVector(1, 0, 0), const Color(0xffbfced7)),
+      ('O', const Solar3dVector(-1, 0, 0), const Color(0xffbfced7)),
+    ];
+    for (final entry in headings) {
+      final point = view.project(view.origin + entry.$2);
+      final offset = point - pivot;
+      if (offset.distance < .001) continue;
+      final direction = offset / offset.distance;
+      final tip = c + direction * 28;
+      canvas.drawLine(c, c + direction * 19, Paint()
+        ..color = entry.$3
+        ..strokeWidth = entry.$1 == 'N' ? 2.7 : 1.4);
+      final label = TextPainter(
+        text: TextSpan(text: entry.$1, style: TextStyle(
+          fontSize: 12, fontWeight: FontWeight.bold, color: entry.$3)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(canvas,
+        tip.translate(-label.width / 2, -label.height / 2));
+    }
+    canvas.drawCircle(c, 3, Paint()..color = const Color(0xffffffff));
   }
 
   void _fill(Canvas canvas, List<Offset> corners, Color color, bool selected) {
@@ -195,6 +258,7 @@ class Solar3dScenePainter extends CustomPainter {
   bool shouldRepaint(covariant Solar3dScenePainter old) =>
       old.scene != scene || old.hiddenIds != hiddenIds ||
       old.excludedIds != excludedIds || old.selectedId != selectedId ||
+      old.frameScene != frameScene ||
       old.yaw != yaw || old.pitch != pitch || old.zoom != zoom ||
       old.directShadeByPanel != directShadeByPanel;
 }
