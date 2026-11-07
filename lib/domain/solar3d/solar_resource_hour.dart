@@ -60,6 +60,8 @@ class HourlySolarResource {
   final int yearUtc;
   final int? monthUtc;
   final String source;
+  final double inclinationDegrees;
+  final double azimuthDegrees;
   final List<double> monthlyReferenceHsp;
   final List<SolarResourceHour> samples;
 
@@ -67,6 +69,8 @@ class HourlySolarResource {
     required this.yearUtc,
     required this.monthUtc,
     required this.source,
+    required this.inclinationDegrees,
+    required this.azimuthDegrees,
     required this.monthlyReferenceHsp,
     required this.samples,
   });
@@ -79,9 +83,18 @@ class HourlySolarResource {
       throw const FormatException('Contrato de recurso solar incompatível');
     }
     final p = json['periodo'];
+    final o = json['orientacao'];
     final reference = json['hsp_referencia_mensal_kwh_m2_dia'];
     final rawSamples = json['amostras'];
-    if (p is! Map || p['ano_utc'] is! int ||
+    if (o is! Map || o['inclinacao_graus'] is! num ||
+        o['azimute_graus'] is! num ||
+        !(o['inclinacao_graus'] as num).isFinite ||
+        !(o['azimute_graus'] as num).isFinite ||
+        (o['inclinacao_graus'] as num) < 0 ||
+        (o['inclinacao_graus'] as num) > 90 ||
+        (o['azimute_graus'] as num) < 0 ||
+        (o['azimute_graus'] as num) > 360 ||
+        p is! Map || p['ano_utc'] is! int ||
         (p['mes_utc'] != null && p['mes_utc'] is! int) ||
         p['passo_minutos'] != 60 ||
         p['ano_completo_validado'] != true ||
@@ -124,6 +137,8 @@ class HourlySolarResource {
       yearUtc: year,
       monthUtc: month,
       source: json['fonte'] as String,
+      inclinationDegrees: (o['inclinacao_graus'] as num).toDouble(),
+      azimuthDegrees: (o['azimute_graus'] as num).toDouble(),
       monthlyReferenceHsp: List.unmodifiable(hsp),
       samples: List.unmodifiable(hours),
     );

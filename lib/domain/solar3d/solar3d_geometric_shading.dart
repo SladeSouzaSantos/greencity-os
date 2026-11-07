@@ -201,6 +201,9 @@ class Solar3dGeometricShading {
     int rows = 6, int columns = 4,
   }) {
     scene.validate();
+    if (resource.monthUtc == null) {
+      throw const FormatException('Solicite um mês UTC para calcular perdas mensais');
+    }
     final panels = scene.objects.where((o) =>
       o.kind == Solar3dObjectKind.panel).toList();
     if (resource.samples.length * panels.length * rows * columns *
@@ -210,6 +213,13 @@ class Solar3dGeometricShading {
     }
     final monthly = <PanelMonthlyIrradianceLoss>[];
     for (final panel in panels) {
+      final azimuthDelta = (panel.azimuthDegrees -
+          resource.azimuthDegrees).abs() % 360;
+      if ((panel.tiltDegrees - resource.inclinationDegrees).abs() > 1e-6 ||
+          math.min(azimuthDelta, 360 - azimuthDelta) > 1e-6) {
+        throw const FormatException(
+          'Cada orientação de placa precisa da sua própria série POA horária');
+      }
       var referenceWhm2 = 0.0, shadedWhm2 = 0.0, beamLostWhm2 = 0.0;
       for (final hour in resource.samples) {
         final fraction = hour.poaDirectWm2 <= 0 ? null : blockedFraction(

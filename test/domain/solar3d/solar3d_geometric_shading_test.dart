@@ -45,6 +45,7 @@ void main() {
     final hours = List.generate(24, (index) => oneHour(index));
     final resource = HourlySolarResource(
       yearUtc: 2023, monthUtc: 1, source: 'fixture',
+      inclinationDegrees: 0, azimuthDegrees: 0,
       monthlyReferenceHsp: List.filled(12, 5),
       samples: hours,
     );
@@ -61,6 +62,18 @@ void main() {
     expect(result.referenceHsp, closeTo(21.6, 1e-9));
     expect(result.correctedHsp, closeTo(4.8, 1e-9));
     expect(result.shadeLossPercent, closeTo(100*700/900, 1e-6));
+  });
+
+  test('Rejeita POA da inclinação errada para um módulo', () {
+    final resource = HourlySolarResource(
+      yearUtc: 2023, monthUtc: 1, source: 'fixture',
+      inclinationDegrees: 20, azimuthDegrees: 0,
+      monthlyReferenceHsp: List.filled(12, 5),
+      samples: [oneHour(0)],
+    );
+    expect(() => Solar3dGeometricShading.calculate(
+      scene: const Solar3dScene([panel]), resource: resource, rows: 2,
+      columns: 2), throwsFormatException);
   });
 
   test('Valida geometria, IDs duplicados e atribuição ao MPPT', () {
@@ -81,6 +94,7 @@ void main() {
       'modelo': 'recurso_solar_poa_horario_sem_obstaculos_v1',
       'sem_obstaculos': true, 'sem_perdas_eletricas': true,
       'fonte': 'fixture',
+      'orientacao': {'inclinacao_graus': 0, 'azimute_graus': 0},
       'periodo': {'ano_utc': 2023, 'mes_utc': 1,
         'passo_minutos': 60, 'horas_retornadas': 1,
         'ano_completo_validado': true},
