@@ -1109,10 +1109,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             for (final y in [2022,2023,2024])
               DropdownMenuItem(value:y,child:Text('Ano $y')),
           ],onChanged:busy ? null : (v) {
-            if (v != null) setState(() {
-              year = v;
-              monthly = {};
-            });
+            if (v != null) {
+              setState(() {
+                year = v;
+                monthly = {};
+              });
+            }
           }),
           DropdownButton<int>(value:month, items: [
             for(var m=1;m<=12;m++)

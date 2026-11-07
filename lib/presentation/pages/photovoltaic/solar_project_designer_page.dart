@@ -434,7 +434,9 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                               project: widget.project, systems: systems),
                           ),
                         );
-                        if (!mounted || correction == null) return;
+                        if (!context.mounted || correction == null) {
+                          return;
+                        }
                         if (!correction.isValidFor(systems)) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text(
