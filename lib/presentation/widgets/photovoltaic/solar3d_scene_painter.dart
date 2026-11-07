@@ -112,18 +112,22 @@ class Solar3dScenePainter extends CustomPainter {
   final Set<String> excludedIds;
   final String? selectedId;
   final double yaw, pitch, zoom;
+  final double sunAzimuthDegrees, sunElevationDegrees;
   final Map<String, double?> directShadeByPanel;
 
   Solar3dScenePainter({
     required this.scene, this.frameScene, required this.hiddenIds,
     required this.excludedIds, required this.selectedId,
     required this.yaw, required this.pitch, required this.zoom,
+    required this.sunAzimuthDegrees, required this.sunElevationDegrees,
     required this.directShadeByPanel,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bg = Paint()..color = const Color(0xff10222d);
+    final isDaylight = sunElevationDegrees > 0;
+    final bg = Paint()..color = isDaylight
+        ? const Color(0xff142a35) : const Color(0xff0b1724);
     canvas.drawRect(Offset.zero & size, bg);
     final view = Solar3dProjection(
       size: size, scene: scene, frameScene: frameScene,
@@ -143,6 +147,10 @@ class Solar3dScenePainter extends CustomPainter {
       canvas.drawLine(c, d, grid);
     }
 
+    // Ground shadows use the actual objects and geographic sun vector.
+    // Hidden objects still cast shadows; excluded objects do not.
+    _paintCastShadows(canvas, view);
+
     final visible = scene.objects.where((o) =>
         !hiddenIds.contains(o.id)).toList()
       ..sort((a,b) => view.depth(b.center).compareTo(view.depth(a.center)));
@@ -158,7 +166,8 @@ class Solar3dScenePainter extends CustomPainter {
       final base = isPanel
           ? colors[(index > 0 ? index - 1 : 0) % colors.length]
           : const Color(0xff687989);
-      final selectedColor = excluded ? const Color(0xff64707a) : base;
+      final selectedColor = excluded ? const Color(0xff64707a)
+          : isDaylight ? base : Color.lerp(base, Colors.black, .55)!;
       if (!isPanel) {
         final front = view.face(object, -object.height / 2);
         final top = view.face(object, object.height / 2);
@@ -182,7 +191,10 @@ class Solar3dScenePainter extends CustomPainter {
             ..strokeWidth=0.5);
       }
       if (selected || isPanel) {
-        final label = isPanel ? 'MPPT ${object.mpptIndex}' : object.id;
+        final blocked = directShadeByPanel[object.id];
+        final label = isPanel
+            ? 'MPPT ${object.mpptIndex}${blocked != null && blocked > 0 ? " · ${(blocked * 100).round()}% sombra" : ""}'
+            : object.id;
         final layout = TextPainter(
           text: TextSpan(text: label, style: TextStyle(
             fontSize: selected ? 12 : 9,
@@ -200,7 +212,89 @@ class Solar3dScenePainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     title.paint(canvas, const Offset(10,10));
+    final sunText = TextPainter(
+      text: TextSpan(
+        text: isDaylight ? 'SOMBRA DIRETA · ESTIMATIVA GEOMÉTRICA'
+            : 'NOITE · SEM IRRADIÂNCIA SOLAR DIRETA',
+        style: const TextStyle(fontSize: 10, color: Color(0xffbfccda)),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    sunText.paint(canvas, const Offset(10,28));
     _paintCompass(canvas, size, view);
+  }
+
+  /// Project opaque 3D boxes/panels onto the real ground plane (Y=0).
+  /// These footprints are visual approximations of direct-beam shadows:
+  /// partial shade ON a panel is evaluated separately by ray casting.
+  void _paintCastShadows(Canvas canvas, Solar3dProjection view) {
+    if (sunElevationDegrees <= 1) return;
+    final azi = sunAzimuthDegrees * math.pi / 180;
+    final ele = sunElevationDegrees * math.pi / 180;
+    final sunEast = math.sin(azi) * math.cos(ele);
+    final sunNorth = math.cos(azi) * math.cos(ele);
+    final sunUp = math.sin(ele);
+    final shadowPaint = Paint()
+      ..color = const Color(0xff02070b).withValues(alpha: .65)
+      ..style = PaintingStyle.fill;
+    for (final object in scene.objects) {
+      if (excludedIds.contains(object.id)) continue;
+      final ground = <Offset>[];
+      for (final dx in [-1.0, 1.0]) {
+        for (final dy in [-1.0, 1.0]) {
+          for (final dz in [-1.0, 1.0]) {
+            final world = view.transform(object, Solar3dVector(
+              dx * object.width / 2,
+              dy * object.height / 2,
+              dz * object.depth / 2,
+            ));
+            final distance = (math.max(0, world.y) / sunUp).clamp(0, 120);
+            ground.add(Offset(world.x, world.z));
+            ground.add(Offset(
+              world.x - sunEast * distance,
+              world.z - sunNorth * distance,
+            ));
+          }
+        }
+      }
+      final hull = _convexHull(ground);
+      if (hull.length < 3) continue;
+      final points = hull.map((p) => view.project(
+        Solar3dVector(p.dx, 0, p.dy))).toList();
+      final path = Path()..addPolygon(points, true);
+      canvas.drawPath(path, shadowPaint);
+    }
+  }
+
+  /// Convex hull in the terrain X/Z coordinates. Sorting is deterministic
+  /// so that the polygons do not self-intersect under camera rotation.
+  static List<Offset> _convexHull(List<Offset> points) {
+    if (points.length < 3) return points;
+    final sorted = [...points]..sort((a,b) {
+      final first = a.dx.compareTo(b.dx);
+      return first != 0 ? first : a.dy.compareTo(b.dy);
+    });
+    double cross(Offset a, Offset b, Offset c) =>
+        (b.dx - a.dx) * (c.dy - a.dy) -
+        (b.dy - a.dy) * (c.dx - a.dx);
+    final lower = <Offset>[];
+    for (final p in sorted) {
+      while (lower.length >= 2 &&
+          cross(lower[lower.length - 2], lower.last, p) <= 0) {
+        lower.removeLast();
+      }
+      lower.add(p);
+    }
+    final upper = <Offset>[];
+    for (final p in sorted.reversed) {
+      while (upper.length >= 2 &&
+          cross(upper[upper.length - 2], upper.last, p) <= 0) {
+        upper.removeLast();
+      }
+      upper.add(p);
+    }
+    return [...lower.take(lower.length - 1),
+        ...upper.take(upper.length - 1)];
   }
 
   void _paintCompass(Canvas canvas, Size size, Solar3dProjection view) {
@@ -260,5 +354,7 @@ class Solar3dScenePainter extends CustomPainter {
       old.excludedIds != excludedIds || old.selectedId != selectedId ||
       old.frameScene != frameScene ||
       old.yaw != yaw || old.pitch != pitch || old.zoom != zoom ||
-      old.directShadeByPanel != directShadeByPanel;
+      old.directShadeByPanel != directShadeByPanel ||
+      old.sunAzimuthDegrees != sunAzimuthDegrees ||
+      old.sunElevationDegrees != sunElevationDegrees;
 }
