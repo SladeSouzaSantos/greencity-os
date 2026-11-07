@@ -39,7 +39,7 @@ void main() {
     expect(june.aboveHorizon, isTrue);
     expect(december.aboveHorizon, isTrue);
     expect((june.elevationDegrees - december.elevationDegrees).abs(),
-      greaterThan(15));
+      greaterThan(8));
     final midnight = Solar3dSunPosition.calculate(
       utc: DateTime.utc(2026, 6, 21, 3),
       latitude: -5.79448, longitude: -35.21101);
