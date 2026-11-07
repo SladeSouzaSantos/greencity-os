@@ -29,9 +29,16 @@ class Solar3dEditorPage extends StatefulWidget {
 class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Solar3dSceneDocument? document;
   Solar3dSceneStorage? storage;
+  // Freeze framing during edits, so dragging does not recenter the scene.
+  Solar3dScene? cameraFrameScene;
+  String? draggingId;
+  Solar3dVector? dragStartCenter;
+  Solar3dVector? dragStartWorld;
+  Solar3dProjection? dragProjection;
+  bool arrangeMode = true;
   String? initError;
   String? selectedId;
-  double yaw = 0.6, pitch = 0.65, zoom = 1;
+  double yaw = 0, pitch = 0.80, zoom = 1;
   double sunAzimuth = 90, sunElevation = 40;
   int month = 1, year = 2023;
   bool allMonths = false, busy = false;
@@ -48,6 +55,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     try {
       final scene = Solar3dPlanFactory.fromSystems(widget.systems);
       document = Solar3dSceneDocument(scene: scene);
+      cameraFrameScene = scene;
       selectedId = scene.objects.firstWhere((o) =>
           o.kind == Solar3dObjectKind.panel).id;
       storage = Solar3dSceneStorage([
@@ -69,6 +77,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       if (!mounted || saved == null || document == null) return;
       setState(() {
         document = saved.reconciledWith(document!.scene);
+        cameraFrameScene = document!.scene;
         selectedId = document!.scene.objects.firstWhere(
           (o) => o.kind == Solar3dObjectKind.panel).id;
         monthly = {};
@@ -301,22 +310,131 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     }
   }
 
-  void _onTapDown(TapDownDetails details, Size size) {
-    final doc = document!;
-    final view = Solar3dProjection(
-      size: size, scene: doc.scene, yaw: yaw, pitch: pitch, zoom: zoom,
+  Solar3dProjection _projection(Size size) {
+    final scene = document!.scene;
+    return Solar3dProjection(
+      size: size, scene: scene, frameScene: cameraFrameScene,
+      yaw: yaw, pitch: pitch, zoom: zoom,
     );
-    String? nearest;
-    var minDistance = 55.0;
-    for (final item in doc.scene.objects) {
-      if (doc.hiddenIds.contains(item.id)) continue;
-      final p = view.project(item.center);
-      final delta = (p - details.localPosition).distance;
-      if (delta < minDistance) {
-        nearest = item.id; minDistance = delta;
+  }
+
+  /// Hit-test the face polygon first; a center-distance fallback helps
+  /// select tiny panels on touch screens. Hide does not affect physics.
+  Solar3dObject? _hitObject(Offset at, Solar3dProjection view) {
+    final doc = document!;
+    final visible = doc.scene.objects
+        .where((o) => !doc.hiddenIds.contains(o.id)).toList()
+      ..sort((a,b) => view.depth(a.center).compareTo(view.depth(b.center)));
+    for (final object in visible) {
+      final polygon = view.face(object, object.height / 2);
+      final path = Path()..addPolygon(polygon, true);
+      if (path.contains(at)) return object;
+    }
+    Solar3dObject? nearest;
+    var distance = 34.0;
+    for (final object in visible) {
+      final d = (view.project(object.center) - at).distance;
+      if (d < distance) {
+        distance = d; nearest = object;
       }
     }
-    if (nearest != null) setState(() => selectedId = nearest);
+    return nearest;
+  }
+
+  void _onTapDown(TapDownDetails details, Size size) {
+    final item = _hitObject(details.localPosition, _projection(size));
+    if (item != null) setState(() => selectedId = item.id);
+  }
+
+  void _onPanStart(DragStartDetails details, Size size) {
+    if (!arrangeMode) return;
+    final view = _projection(size);
+    final item = _hitObject(details.localPosition, view);
+    if (item == null) return;
+    draggingId = item.id;
+    dragStartCenter = item.center;
+    dragProjection = view;
+    dragStartWorld = view.pointOnHorizontalPlane(
+        details.localPosition, item.center.y);
+    setState(() => selectedId = item.id);
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    final id = draggingId;
+    final start = dragStartCenter;
+    final anchor = dragStartWorld;
+    final projection = dragProjection;
+    if (id == null || start == null || anchor == null || projection == null) {
+      return;
+    }
+    final current = selected;
+    if (current == null || current.id != id) return;
+    final world = projection.pointOnHorizontalPlane(
+      details.localPosition, start.y);
+    final east = start.x + world.x - anchor.x;
+    final north = start.z + world.z - anchor.z;
+    if (!east.isFinite || !north.isFinite ||
+        east.abs() > 500 || north.abs() > 500) return;
+    if ((east - current.center.x).abs() < .0001 &&
+        (north - current.center.z).abs() < .0001) return;
+    _replace(current.copyWith(center: Solar3dVector(east, start.y, north)));
+  }
+
+  void _onPanEnd() {
+    draggingId = null;
+    dragStartCenter = null;
+    dragStartWorld = null;
+    dragProjection = null;
+  }
+
+  Future<void> _editPosition() async {
+    final current = selected;
+    if (current == null) return;
+    final eastCtrl = TextEditingController(text: current.center.x.toStringAsFixed(3));
+    final northCtrl = TextEditingController(text: current.center.z.toStringAsFixed(3));
+    final heightCtrl = TextEditingController(text: current.center.y.toStringAsFixed(3));
+    final accepted = await showDialog<bool>(context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Posicionar objeto (metros)'),
+        content: SizedBox(width: 320, child: Column(
+          mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: eastCtrl,
+              decoration: const InputDecoration(labelText: 'X · Leste (+) / Oeste (−)'),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
+            TextField(controller: northCtrl,
+              decoration: const InputDecoration(labelText: 'Z · Norte (+) / Sul (−)'),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
+            TextField(controller: heightCtrl,
+              decoration: const InputDecoration(labelText: 'Y · Elevação acima do solo'),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
+          ],
+        )),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Aplicar')),
+        ],
+      ));
+    double? read(TextEditingController ctrl) => double.tryParse(
+      ctrl.text.trim().replaceAll(',', '.'));
+    final x = read(eastCtrl), z = read(northCtrl), y = read(heightCtrl);
+    eastCtrl.dispose();
+    northCtrl.dispose();
+    heightCtrl.dispose();
+    if (!mounted || accepted != true) return;
+    if (x == null || z == null || y == null ||
+        !x.isFinite || !z.isFinite || !y.isFinite ||
+        x.abs() > 500 || z.abs() > 500 || y < 0 || y > 500) {
+      _notice('Coordenadas inválidas: X/Z ±500 m e altura Y de 0 a 500 m.');
+      return;
+    }
+    _replace(current.copyWith(center: Solar3dVector(x, y, z)));
+  }
+
+  void _reframe() {
+    _onPanEnd();
+    setState(() => cameraFrameScene = document!.scene);
   }
 
   Widget _adjustButtons() => Wrap(spacing: 4, runSpacing: 2, children: [
@@ -388,11 +506,17 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           final size = Size(constraints.maxWidth, math.min(440.0,
               math.max(250.0, MediaQuery.of(context).size.height*.48)));
           return GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTapDown: (event) => _onTapDown(event,size),
+            onPanStart: arrangeMode ? (event) => _onPanStart(event,size) : null,
+            onPanUpdate: arrangeMode ? _onPanUpdate : null,
+            onPanEnd: arrangeMode ? (_) => _onPanEnd() : null,
+            onPanCancel: arrangeMode ? _onPanEnd : null,
             child: SizedBox(height: size.height, width: size.width,
               child: ClipRRect(borderRadius: BorderRadius.circular(12),
                 child: CustomPaint(size: size, painter: Solar3dScenePainter(
                   scene: doc.scene,
+                  frameScene: cameraFrameScene,
                   hiddenIds: doc.hiddenIds,
                   excludedIds: doc.excludedIds,
                   selectedId: selectedId, yaw: yaw, pitch: pitch,
@@ -402,6 +526,46 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             ),
           );
         }),
+        const SizedBox(height: 8),
+        const Text('Bússola no canto superior direito: N = Norte, S = Sul, '
+            'L = Leste, O = Oeste. Ela gira com a câmera. '
+            'Plano do telhado: X = Leste/Oeste, Z = Norte/Sul; Y = altura.'),
+        Wrap(spacing: 7, runSpacing: 6, children: [
+          FilterChip(
+            label: const Text('Arrastar placas e obstáculos'),
+            selected: arrangeMode,
+            onSelected: (enabled) => setState(() {
+              arrangeMode = enabled;
+              _onPanEnd();
+            }),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => setState(() {
+              _onPanEnd();
+              yaw = 0;
+              pitch = math.pi / 2;
+            }),
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('Vista superior · N ↑'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => setState(() {
+              _onPanEnd();
+              yaw = 0.6;
+              pitch = 0.80;
+            }),
+            icon: const Icon(Icons.view_in_ar_outlined),
+            label: const Text('Perspectiva'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _reframe,
+            icon: const Icon(Icons.center_focus_strong_outlined),
+            label: const Text('Enquadrar cena'),
+          ),
+        ]),
+        const Text('Arraste uma placa/obstáculo na cena para mover no plano '
+            'X/Z mantendo a altura. Para posicionamento exato, use '
+            '“Editar coordenadas”.'),
         Wrap(spacing: 12, children: [
           SizedBox(width: 190, child: Column(children: [
             const Text('Rotação da câmera'),
@@ -410,7 +574,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           ])),
           SizedBox(width: 190, child: Column(children: [
             const Text('Inclinação da câmera'),
-            Slider(value: pitch, min: .15, max: 1.45,
+            Slider(value: pitch, min: .15, max: math.pi / 2,
               onChanged: (v) => setState(() => pitch = v)),
           ])),
           SizedBox(width: 160, child: Column(children: [
@@ -451,6 +615,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               'altura ${current.center.y.toStringAsFixed(2)}, '
               'Norte ${current.center.z.toStringAsFixed(2)}'),
           _adjustButtons(),
+          OutlinedButton.icon(
+            onPressed: _editPosition,
+            icon: const Icon(Icons.edit_location_alt_outlined),
+            label: const Text('Editar coordenadas X / Z / Y'),
+          ),
           Text('Azimute do objeto: ${current.azimuthDegrees.toStringAsFixed(0)}°'),
           Slider(
             value: current.azimuthDegrees.clamp(0.0, 359.9).toDouble(),
