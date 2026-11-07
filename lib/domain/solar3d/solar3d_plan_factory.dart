@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import '../entities/solar_system.dart';
 import '../enums/module_orientation.dart';
 import 'solar3d_geometric_shading.dart';
@@ -42,10 +40,15 @@ class Solar3dPlanFactory {
           throw FormatException(
             'Dimensões inválidas para ${scenario.module.modelName}');
         }
-        final elevation = math.max(
-          scenario.distanceToGround,
-          panelDepth/2 * math.sin(scenario.inclination*math.pi/180) + 0.06,
-        );
+        // The app asks for the distance from the CENTER of the module
+        // to the ground. Never silently raise the module to clear its edge.
+        // A ground collision is a warning in the editor, not a geometry
+        // override. Preserve this physical input in the 3D scene.
+        final elevation = scenario.distanceToGround;
+        if (!elevation.isFinite || elevation < 0 || elevation > 500) {
+          throw FormatException(
+            'Altura do centro do módulo inválida: ${scenario.id}');
+        }
         for (var index = 0; index < count; index++) {
           final col = index % 5;
           final row = index ~/ 5;
