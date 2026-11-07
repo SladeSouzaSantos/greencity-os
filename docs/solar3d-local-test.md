@@ -130,3 +130,31 @@ a integração no Windows.
   série validada, nem as limitações reais dos MPPTs.
 - Resultados parciais/mês não devem ser tratados como rendimento anual
   certificado. Validação adicional com PVsyst/medições segue pendente.
+
+## Navegação e posicionamento — incremento UX (2026-11-07)
+
+Na tela **ABRIR ANÁLISE 3D**:
+- A bússola no canto superior direito mostra **N, S, L e O reais**
+  (Norte, Sul, Leste, Oeste), girando junto com a câmera.
+- A geometria usa **X = Leste/Oeste**, **Z = Norte/Sul** e
+  **Y = elevação/altura**, em metros. O plano do terreno é X/Z,
+  não X/Y; o editor agora explica isso explicitamente.
+- Habilite **Arrastar placas e obstáculos** e arraste o objeto
+  tocando diretamente na cena. Ele se move no plano X/Z, mantendo Y.
+  Isso vale mesmo após rodar a câmera, sem mover todo o enquadramento.
+- **Vista superior · N ↑** coloca Norte para cima e Leste à direita.
+  **Perspectiva** restaura a vista oblíqua. **Enquadrar cena** reajusta
+  o enquadramento após mover objetos para fora da área inicial.
+- **Editar coordenadas X / Z / Y** permite ajustar posições numéricas
+  precisas em metros (inclusive negativas em X/Z; vírgula aceita).
+  O campo Y é altura. Os botões de deslocamento de 0,25 m continuam
+  disponíveis para ajuste fino.
+- Use **Salvar cena** e reabra a tela para conferir persistência.
+  O movimento modifica apenas a cena de estudo, não o arranjo elétrico
+  real no orçamento.
+- Testes automatizados cobrem ida-e-volta da projeção, drag em câmera
+  inclinada, coordenadas geográficas na bússola e quadro de referência
+  fixo enquanto arrasta.
+
+**Limitação:** a vista Flutter nativa continua sendo projeção 3D
+simplificada e não um ambiente Three.js com seleção/perspectiva GPU completa.
