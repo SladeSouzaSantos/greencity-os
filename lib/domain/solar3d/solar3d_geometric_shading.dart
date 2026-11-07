@@ -35,14 +35,19 @@ class Solar3dObject {
     this.moduleModel, this.stringId, this.mpptIndex,
   });
 
-  Solar3dObject copyWith({Solar3dVector? center, String? stringId, int? mpptIndex}) =>
-      Solar3dObject(
-        id: id, kind: kind, center: center ?? this.center,
-        width: width, depth: depth, height: height,
-        azimuthDegrees: azimuthDegrees, tiltDegrees: tiltDegrees,
-        moduleModel: moduleModel, stringId: stringId ?? this.stringId,
-        mpptIndex: mpptIndex ?? this.mpptIndex,
-      );
+  Solar3dObject copyWith({
+    Solar3dVector? center, String? stringId, int? mpptIndex,
+    double? width, double? depth, double? height,
+    double? azimuthDegrees, double? tiltDegrees,
+  }) => Solar3dObject(
+    id: id, kind: kind, center: center ?? this.center,
+    width: width ?? this.width, depth: depth ?? this.depth,
+    height: height ?? this.height,
+    azimuthDegrees: azimuthDegrees ?? this.azimuthDegrees,
+    tiltDegrees: tiltDegrees ?? this.tiltDegrees,
+    moduleModel: moduleModel, stringId: stringId ?? this.stringId,
+    mpptIndex: mpptIndex ?? this.mpptIndex,
+  );
 
   void validate() {
     if (id.isEmpty || ![center.x, center.y, center.z, width, depth,
@@ -198,6 +203,7 @@ class Solar3dGeometricShading {
   static List<PanelMonthlyIrradianceLoss> calculate({
     required Solar3dScene scene,
     required HourlySolarResource resource,
+    Set<String>? targetPanelIds,
     int rows = 6, int columns = 4,
   }) {
     scene.validate();
@@ -205,7 +211,11 @@ class Solar3dGeometricShading {
       throw const FormatException('Solicite um mês UTC para calcular perdas mensais');
     }
     final panels = scene.objects.where((o) =>
-      o.kind == Solar3dObjectKind.panel).toList();
+      o.kind == Solar3dObjectKind.panel &&
+      (targetPanelIds == null || targetPanelIds.contains(o.id))).toList();
+    if (panels.isEmpty) {
+      throw const FormatException('Não há placas selecionadas para a análise');
+    }
     if (resource.samples.length * panels.length * rows * columns *
         math.max(1, scene.objects.length - 1) > 8000000) {
       throw const FormatException(
