@@ -353,6 +353,13 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     return result;
   }
 
+  static String _shortPanelId(String id) {
+    final parts = id.split('/');
+    return parts.length >= 2
+        ? parts.sublist(parts.length - 2).join('/')
+        : id;
+  }
+
   static double _panelLowestPoint(Solar3dObject panel) =>
       panel.center.y -
       panel.depth / 2 * math.sin(panel.tiltDegrees * math.pi / 180) -
@@ -872,7 +879,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           Wrap(spacing: 6, runSpacing: 4, children: [
             for (final entry in inspections.entries)
               ActionChip(
-                label: Text('${entry.key.split("/").last} · '
+                label: Text('${_shortPanelId(entry.key)} · '
+                  'MPPT ${doc.scene.objects.firstWhere((o) =>
+                    o.id == entry.key).mpptIndex} · '
                   '${entry.value == null ? "sem feixe" :
                     "${(entry.value!.fraction * 100).round()}%"}'),
                 avatar: Icon(
