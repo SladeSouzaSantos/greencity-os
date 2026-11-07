@@ -58,6 +58,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   bool allMonths = false, busy = false;
   String progress = '';
   Map<int, List<PanelMonthlyIrradianceLoss>> monthly = {};
+  int sceneRevision = 0;
+  String? lastCalculatedHourlyEndpoint;
   static const String hourlyUrl = String.fromEnvironment(
     'HSP_HOURLY_URL',
     defaultValue: 'https://hsp.greencity.net.br/api/recurso-solar/horario',
@@ -157,6 +159,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         selectedId = document!.scene.objects.firstWhere(
           (o) => o.kind == Solar3dObjectKind.panel).id;
         monthly = {};
+        sceneRevision++;
+        lastCalculatedHourlyEndpoint = null;
       });
     } catch (err) {
       if (mounted) {
@@ -191,7 +195,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
 
   void _changeDocument(Solar3dSceneDocument next) {
     next.scene.validate();
-    setState(() { document = next; monthly = {}; });
+    setState(() {
+      document = next;
+      monthly = {};
+      lastCalculatedHourlyEndpoint = null;
+      sceneRevision++;
+    });
   }
 
   void _replace(Solar3dObject next) {
@@ -374,6 +383,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     final doc = document;
     if (doc == null || busy) return;
     final endpoint = hourlyEndpointController.text.trim();
+    final revision = sceneRevision;
     final uri = Uri.tryParse(endpoint);
     if (uri == null ||
         !['https', 'http'].contains(uri.scheme) ||
@@ -408,7 +418,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       _notice('Máximo de 8 orientações distintas por análise de pesquisa.');
       return;
     }
-    setState(() { busy = true; progress = 'Preparando séries'; monthly = {}; });
+    setState(() {
+      busy = true;
+      progress = 'Preparando séries';
+      monthly = {};
+      lastCalculatedHourlyEndpoint = null;
+    });
     final client = SolarResourceHourlyDataSource(
         dio: Dio(), endpoint: endpoint);
     final output = <int, List<PanelMonthlyIrradianceLoss>>{};
@@ -416,6 +431,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       final months = allMonths ? List.generate(12, (i) => i + 1) : [month];
       for (final m in months) {
         if (!mounted) return;
+        if (revision != sceneRevision) {
+          throw StateError(
+            'A cena mudou durante o cálculo. Calcule novamente.');
+        }
         setState(() => progress = 'Calculando mês $m/${months.last}');
         final values = <PanelMonthlyIrradianceLoss>[];
         for (final group in groups.values) {
@@ -439,7 +458,14 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         output[m] = values;
       }
       if (mounted) {
-        setState(() => monthly = output);
+        if (revision != sceneRevision) {
+          throw StateError(
+            'A cena mudou durante o cálculo. Calcule novamente.');
+        }
+        setState(() {
+          monthly = output;
+          lastCalculatedHourlyEndpoint = endpoint;
+        });
       }
     } catch (err) {
       if (!mounted) return;
@@ -516,6 +542,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   /// rewritten; no string mismatch/bypass yield is asserted.
   Future<void> _applyOpticalToProject() async {
     if (busy) return;
+    if (lastCalculatedHourlyEndpoint == null ||
+        lastCalculatedHourlyEndpoint !=
+            hourlyEndpointController.text.trim()) {
+      _notice('Recalcule os 12 meses após alterar o endpoint HSP.');
+      return;
+    }
     try {
       final doc = document!;
       final correction = Solar3dOpticalCorrection.fromAnalysis(
@@ -1094,6 +1126,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             prefixIcon: Icon(Icons.api_outlined),
           ),
           keyboardType: TextInputType.url,
+          onChanged: (_) => setState(() {
+            monthly = {};
+            lastCalculatedHourlyEndpoint = null;
+          }),
         ),
         Align(
           alignment: Alignment.centerLeft,
