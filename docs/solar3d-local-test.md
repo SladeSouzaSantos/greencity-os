@@ -277,3 +277,91 @@ a rota horária do HSP executada por `uvicorn api:app` local.
 
 Não remova os containers `phasscode-platform-*`, Redis ou
 PostgreSQL. Não rode `docker system prune` nem `down -v`.
+
+## Aplicação da correção óptica 3D à geração estimada (incremento de 07/11/2026)
+
+**Objetivo:** após calcular o recurso solar horário pelo HSP e a máscara
+geométrica de sombreamento por placa, recalcular a projeção de geração
+exibida na tela principal do GreenCity OS, sem assumir que a perda óptica
+seja uma perda elétrica I-V de string ou de MPPT.
+
+### Fluxo de uso (Windows)
+
+1. Abra um projeto e conclua o dimensionamento HSP normal dos arranjos.
+   **Não habilite obstáculos na chamada HSP legada** se pretender
+   aplicar a correção 3D: isso duplicaria a penalidade.
+2. Abra **ANÁLISE 3D**. Ajuste as posições e os obstáculos. Confira se
+   nenhuma placa cruza o terreno e se os **MPPTs, inclinação e azimute
+   cadastrados** correspondem à cena. Valores editados apenas no 3D e
+   diferentes do dimensionamento são rejeitados na aplicação.
+3. Use a API HSP horária local `feature/hourly-resource-api`,
+   selecione o ano e marque **Calcular 12 meses**. Execute o cálculo
+   completo até aparecerem os resultados mensais. Não há aplicação
+   a partir de um único mês nem de apenas algumas placas.
+4. Clique em **APLICAR CORREÇÃO ÓPTICA NA GERAÇÃO** e confirme a
+   explicação de limitações. A página 3D retorna à tela do projeto.
+5. O cartão **Geração projetada · correção óptica 3D** mostra
+   geração média sem e com sombra, diferença em kWh/mês e uma tabela
+   recolhível de comparação para os 12 meses. Cada cartão de arranjo
+   também identifica o HSP óptico estimado do respectivo MPPT.
+6. **Remover correção 3D e comparar geração original** volta
+   imediatamente à estimativa original. Abrir novamente o editor ou
+   recalcular as bases HSP invalida o ajuste aplicado, por segurança.
+   Neste estágio o ajuste vale apenas durante a sessão de projeto:
+   **não foi persistido como rendimento elétrico certificado**.
+
+### Integração numérica
+
+Para um módulo `i` do MPPT `m`, em cada mês `k`, obtêm-se
+`HSP_ref(i,k)` e `HSP_sombra(i,k)` da mesma série horária POA,
+com somente a componente direta afetada pelos raios geométricos.
+
+A retenção óptica do MPPT é:
+
+```
+retencao(m,k) =
+  soma_i[Pnominal_i * HSP_sombra(i,k)]
+  / soma_i[Pnominal_i * HSP_ref(i,k)]
+```
+
+A estimativa já calculada pelo GreenCity OS para esse MPPT (HSP do
+grupo, fator térmico, derates, eficiência do inversor) recebe
+**uma única multiplicação** por `retencao(m,k)`.
+A soma dos MPPTs passa a compor a geração mensal de projeto e
+consequentemente a média de 12 meses. Não se faz média simples de
+percentuais de sombra e **não se multiplica percentuais individuais
+em série** como se existisse curva I-V real.
+
+Por ser uma aplicação óptica aproximada, ela NÃO calcula:
+- mismatch não-linear entre módulos em série/paralelo;
+- bypass/substring/células, rastreamento de MPP global nem clipping;
+- perdas difusas por obstrução de céu;
+- perdas/ganhos da face traseira bifacial com geometria detalhada;
+- rendimento AC bancável/validado.
+
+### Travas de consistência
+
+- Exige exatamente **12 meses e todos os módulos**, com IDs físicos,
+  potência nominal, MPPT, orientação e modelo conciliados com
+  `SolarSystem` / `SolarArray` do cadastro existente.
+- Recusa `SolarScenario.obstacle` legado ou
+  `solarScenarioResult.shadowLossPercentage` diferente de 0%.
+- Recusa módulo omitido, duplicado, abaixo do terreno ou com
+  MPPT/orientação divergente do cadastro.
+- Se a geometria ou o endpoint da API mudar DURANTE o cálculo, o
+  resultado fica obsoleto, sem autorizar aplicação.
+- Se os equipamentos, quantidades, distribuição de MPPT ou HSP-base
+  forem alterados, a assinatura de projeto invalida o fator ativo.
+
+### Critérios de homologação manual
+
+- Cálculo base original permanece idêntico com correção desativada.
+- Alterar apenas a posição de um obstáculo exige novo cálculo e
+  modifica os fatores das placas atingidas, sem afetar artificialmente
+  os MPPTs livres.
+- Aplicar cenário 3D modifica totais mensais/anuais de geração.
+- Retirar o cenário restaura os mesmos valores-base.
+- Alterar MPPT na tela 3D (sem configurar o circuito real no projeto)
+  é bloqueado para aplicação, não uma redistribuição elétrica silenciosa.
+- Verificar resultados com HSP local e comparar com PVsyst/medição,
+  antes de considerar qualquer rendimento como resultado técnico final.
