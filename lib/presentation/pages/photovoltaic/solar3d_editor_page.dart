@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
+
+import 'package:flutter/gestures.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +13,7 @@ import '../../../domain/entities/solar_system.dart';
 import '../../../domain/solar3d/solar3d_geometric_shading.dart';
 import '../../../domain/solar3d/solar3d_plan_factory.dart';
 import '../../../domain/solar3d/solar3d_scene_document.dart';
+import '../../../domain/solar3d/solar3d_sun_position.dart';
 import '../../widgets/photovoltaic/solar3d_scene_painter.dart';
 
 /// New opt-in scene editor. The legacy HSP calculation and SolarSystem remain
@@ -35,11 +39,19 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Solar3dVector? dragStartCenter;
   Solar3dVector? dragStartWorld;
   Solar3dProjection? dragProjection;
-  bool arrangeMode = true;
+  Offset? lastGesturePoint;
+  double lastGestureScale = 1, lastGestureRotation = 0;
+  bool multiTouch = false;
+  Timer? sunPlayback;
+  DateTime previewDay = DateTime.utc(
+      DateTime.now().year, DateTime.now().month, DateTime.now().day);
+  int previewMinutes = 12 * 60;
+  // Brazil defaults to UTC-3; this is an explicit PROJECT setting.
+  // UTC offset is editable and never inferred silently from longitude.
+  int projectUtcOffset = -3;
   String? initError;
   String? selectedId;
   double yaw = 0, pitch = 0.80, zoom = 1;
-  double sunAzimuth = 90, sunElevation = 40;
   int month = 1, year = 2023;
   bool allMonths = false, busy = false;
   String progress = '';
@@ -68,6 +80,62 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       _loadSaved();
     } on FormatException catch (err) {
       initError = err.message;
+    }
+  }
+
+  @override
+  void dispose() {
+    sunPlayback?.cancel();
+    super.dispose();
+  }
+
+  DateTime get _previewInstantUtc {
+    final local = DateTime.utc(previewDay.year, previewDay.month,
+        previewDay.day, previewMinutes ~/ 60, previewMinutes % 60);
+    return local.subtract(Duration(hours: projectUtcOffset));
+  }
+
+  Solar3dSunPosition get _sun => Solar3dSunPosition.calculate(
+    utc: _previewInstantUtc,
+    latitude: widget.project.latitude,
+    longitude: widget.project.longitude,
+  );
+
+  String get _previewClock {
+    final hour = (previewMinutes ~/ 60).toString().padLeft(2, '0');
+    final minute = (previewMinutes % 60).toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  void _toggleSunPlayback() {
+    if (sunPlayback != null) {
+      sunPlayback?.cancel();
+      setState(() => sunPlayback = null);
+      return;
+    }
+    sunPlayback = Timer.periodic(const Duration(milliseconds: 150), (_) {
+      if (!mounted) return;
+      setState(() {
+        previewMinutes += 15;
+        if (previewMinutes >= 1440) {
+          previewMinutes = 0;
+          previewDay = previewDay.add(const Duration(days: 1));
+        }
+      });
+    });
+    setState(() {});
+  }
+
+  Future<void> _selectPreviewDate() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: DateTime(previewDay.year, previewDay.month, previewDay.day),
+      firstDate: DateTime(2001),
+      lastDate: DateTime(2100),
+    );
+    if (selected != null && mounted) {
+      setState(() => previewDay =
+          DateTime.utc(selected.year, selected.month, selected.day));
     }
   }
 
@@ -128,17 +196,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     ));
   }
 
-  void _move(double dx, double dy, double dz) {
-    final current = selected;
-    if (current == null) return;
-    _replace(current.copyWith(center: Solar3dVector(
-      current.center.x + dx,
-      current.center.y + dy,
-      current.center.z + dz,
-    )));
-  }
-
-  void _toggle({required bool visibility}) {
+   void _toggle({required bool visibility}) {
     final doc = document!;
     final id = selectedId;
     if (id == null) return;
@@ -234,18 +292,31 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         !doc.excludedIds.contains(o.id)).toList());
   }
 
-  Map<String, double?> _previewShadows() {
-    final current = selected;
-    if (current == null || current.kind != Solar3dObjectKind.panel ||
-        document!.excludedIds.contains(current.id)) {
-      return {};
+  Map<String, double?> _previewShadows(Solar3dSunPosition sun) {
+    final scene = analysisScene;
+    final result = <String, double?>{};
+    if (!sun.aboveHorizon) return result;
+    final panels = scene.objects.where(
+      (o) => o.kind == Solar3dObjectKind.panel,
+    ).toList();
+    // Restrict synchronous per-frame raycasting on large projects.
+    // Selecting a panel still prioritizes that panel in the preview.
+    final first = selected;
+    final candidates = <Solar3dObject>[
+      if (first != null && first.kind == Solar3dObjectKind.panel &&
+          panels.any((o) => o.id == first.id)) first,
+      ...panels.where((o) => o.id != first?.id).take(35),
+    ];
+    for (final panel in candidates) {
+      result[panel.id] = Solar3dGeometricShading.blockedFraction(
+        panel: panel,
+        scene: scene,
+        sunAzimuthDegrees: sun.azimuthDegrees,
+        sunElevationDegrees: sun.elevationDegrees,
+        rows: 6, columns: 4,
+      );
     }
-    final value = Solar3dGeometricShading.blockedFraction(
-      panel: current, scene: analysisScene,
-      sunAzimuthDegrees: sunAzimuth,
-      sunElevationDegrees: sunElevation, rows: 6, columns: 4,
-    );
-    return {current.id: value};
+    return result;
   }
 
   Future<void> _calculate() async {
@@ -346,20 +417,74 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     if (item != null) setState(() => selectedId = item.id);
   }
 
-  void _onPanStart(DragStartDetails details, Size size) {
-    if (!arrangeMode) return;
+  void _onScaleStart(ScaleStartDetails details, Size size) {
+    _onPanEnd();
+    lastGesturePoint = details.localFocalPoint;
+    lastGestureScale = 1;
+    lastGestureRotation = 0;
+    multiTouch = details.pointerCount >= 2;
+    if (multiTouch) return;
     final view = _projection(size);
-    final item = _hitObject(details.localPosition, view);
-    if (item == null) return;
+    final item = _hitObject(details.localFocalPoint, view);
+    if (item == null) return; // One finger on empty background orbits.
     draggingId = item.id;
     dragStartCenter = item.center;
     dragProjection = view;
     dragStartWorld = view.pointOnHorizontalPlane(
-        details.localPosition, item.center.y);
+      details.localFocalPoint, item.center.y);
     setState(() => selectedId = item.id);
   }
 
-  void _onPanUpdate(DragUpdateDetails details) {
+  static double _wrapYaw(double v) =>
+      (v + math.pi) % (2 * math.pi) - math.pi;
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (details.pointerCount >= 2) {
+      if (!multiTouch) {
+        multiTouch = true;
+        _onPanEnd();
+        lastGestureScale = details.scale;
+        lastGestureRotation = details.rotation;
+        lastGesturePoint = details.localFocalPoint;
+        return;
+      }
+      final ratio = lastGestureScale.abs() > 1e-6
+          ? details.scale / lastGestureScale : 1.0;
+      final twist = details.rotation - lastGestureRotation;
+      lastGestureScale = details.scale;
+      lastGestureRotation = details.rotation;
+      lastGesturePoint = details.localFocalPoint;
+      setState(() {
+        if (ratio.isFinite && ratio > 0) {
+          zoom = (zoom * ratio).clamp(.45, 4.0).toDouble();
+        }
+        if (twist.isFinite) yaw = _wrapYaw(yaw + twist);
+      });
+      return;
+    }
+    if (multiTouch) return;
+    if (draggingId != null) {
+      _dragTo(details.localFocalPoint);
+      return;
+    }
+    final last = lastGesturePoint ?? details.localFocalPoint;
+    final delta = details.localFocalPoint - last;
+    lastGesturePoint = details.localFocalPoint;
+    setState(() {
+      yaw = _wrapYaw(yaw + delta.dx * .009);
+      pitch = (pitch - delta.dy * .006).clamp(.2, math.pi / 2).toDouble();
+    });
+  }
+
+  void _onScaleEnd() {
+    _onPanEnd();
+    lastGesturePoint = null;
+    multiTouch = false;
+    lastGestureScale = 1;
+    lastGestureRotation = 0;
+  }
+
+  void _dragTo(Offset localPosition) {
     final id = draggingId;
     final start = dragStartCenter;
     final anchor = dragStartWorld;
@@ -372,7 +497,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       return;
     }
     final world = projection.pointOnHorizontalPlane(
-      details.localPosition, start.y);
+      localPosition, start.y);
     final east = start.x + world.x - anchor.x;
     final north = start.z + world.z - anchor.z;
     if (!east.isFinite || !north.isFinite ||
@@ -411,7 +536,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               decoration: const InputDecoration(labelText: 'Z · Norte (+) / Sul (−)'),
               keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
             TextField(controller: heightCtrl,
-              decoration: const InputDecoration(labelText: 'Y · Elevação acima do solo'),
+              decoration: const InputDecoration(labelText: 'Y · Altura do centro do módulo ao solo'),
               keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
           ],
         )),
@@ -443,16 +568,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     setState(() => cameraFrameScene = document!.scene);
   }
 
-  Widget _adjustButtons() => Wrap(spacing: 4, runSpacing: 2, children: [
-    OutlinedButton(onPressed: () => _move(-.25,0,0), child: const Text('← Oeste')),
-    OutlinedButton(onPressed: () => _move(.25,0,0), child: const Text('Leste →')),
-    OutlinedButton(onPressed: () => _move(0,0,.25), child: const Text('↑ Norte')),
-    OutlinedButton(onPressed: () => _move(0,0,-.25), child: const Text('Sul ↓')),
-    OutlinedButton(onPressed: () => _move(0,.25,0), child: const Text('Altura +')),
-    OutlinedButton(onPressed: () => _move(0,-.25,0), child: const Text('Altura −')),
-  ]);
-
-  Widget _monthlyTable() {
+   Widget _monthlyTable() {
     if (monthly.isEmpty) return const SizedBox.shrink();
     final current = selected;
     if (current == null || current.kind != Solar3dObjectKind.panel) {
@@ -496,6 +612,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     final doc = document!;
     final current = selected;
     final mpptSystem = current == null ? null : _systemFor(current.id);
+    final sun = _sun;
+    final previewShades = _previewShadows(sun);
     return Scaffold(
       appBar: AppBar(title: const Text('Análise 3D · GreenCity OS'),
         actions: [
@@ -511,14 +629,21 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         LayoutBuilder(builder: (context, constraints) {
           final size = Size(constraints.maxWidth, math.min(440.0,
               math.max(250.0, MediaQuery.of(context).size.height*.48)));
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: (event) => _onTapDown(event,size),
-            onPanStart: arrangeMode ? (event) => _onPanStart(event,size) : null,
-            onPanUpdate: arrangeMode ? _onPanUpdate : null,
-            onPanEnd: arrangeMode ? (_) => _onPanEnd() : null,
-            onPanCancel: arrangeMode ? _onPanEnd : null,
-            child: SizedBox(height: size.height, width: size.width,
+          return Listener(
+            onPointerSignal: (event) {
+              if (event is PointerScrollEvent) {
+                setState(() => zoom = (zoom *
+                    math.exp(-event.scrollDelta.dy * .0015))
+                    .clamp(.45, 4.0).toDouble());
+              }
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (event) => _onTapDown(event,size),
+              onScaleStart: (event) => _onScaleStart(event,size),
+              onScaleUpdate: _onScaleUpdate,
+              onScaleEnd: (_) => _onScaleEnd(),
+              child: SizedBox(height: size.height, width: size.width,
               child: ClipRRect(borderRadius: BorderRadius.circular(12),
                 child: CustomPaint(size: size, painter: Solar3dScenePainter(
                   scene: doc.scene,
@@ -526,28 +651,26 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                   hiddenIds: doc.hiddenIds,
                   excludedIds: doc.excludedIds,
                   selectedId: selectedId, yaw: yaw, pitch: pitch,
-                  zoom: zoom, directShadeByPanel: _previewShadows(),
+                  zoom: zoom,
+                  sunAzimuthDegrees: sun.azimuthDegrees,
+                  sunElevationDegrees: sun.elevationDegrees,
+                  directShadeByPanel: previewShades,
                 )),
               ),
+            ),
             ),
           );
         }),
         const SizedBox(height: 8),
-        const Text('Bússola no canto superior direito: N = Norte, S = Sul, '
-            'L = Leste, O = Oeste. Ela gira com a câmera. '
-            'Plano do telhado: X = Leste/Oeste, Z = Norte/Sul; Y = altura.'),
-        Wrap(spacing: 7, runSpacing: 6, children: [
-          FilterChip(
-            label: const Text('Arrastar placas e obstáculos'),
-            selected: arrangeMode,
-            onSelected: (enabled) => setState(() {
-              arrangeMode = enabled;
-              _onPanEnd();
-            }),
-          ),
+        const Text('N / S / L / O: bússola geográfica, acompanha a câmera. '
+            'X: Leste/Oeste · Z: Norte/Sul · Y: distância do centro ao solo.'),
+        const Text('Toque em uma placa para mover; arraste no fundo para '
+            'girar a câmera. Faça pinça com dois dedos para zoom e giro; '
+            'no computador, use a roda do mouse para zoom.'),
+        Wrap(spacing: 8, runSpacing: 5, children: [
           OutlinedButton.icon(
             onPressed: () => setState(() {
-              _onPanEnd();
+              _onScaleEnd();
               yaw = 0;
               pitch = math.pi / 2;
             }),
@@ -556,9 +679,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           ),
           OutlinedButton.icon(
             onPressed: () => setState(() {
-              _onPanEnd();
-              yaw = 0.6;
-              pitch = 0.80;
+              _onScaleEnd();
+              yaw = .6;
+              pitch = .80;
             }),
             icon: const Icon(Icons.view_in_ar_outlined),
             label: const Text('Perspectiva'),
@@ -569,38 +692,62 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             label: const Text('Enquadrar cena'),
           ),
         ]),
-        const Text('Arraste uma placa/obstáculo na cena para mover no plano '
-            'X/Z mantendo a altura. Para posicionamento exato, use '
-            '“Editar coordenadas”.'),
-        Wrap(spacing: 12, children: [
-          SizedBox(width: 190, child: Column(children: [
-            const Text('Rotação da câmera'),
-            Slider(value: yaw, min: -math.pi, max: math.pi,
-              onChanged: (v) => setState(() => yaw = v)),
-          ])),
-          SizedBox(width: 190, child: Column(children: [
-            const Text('Inclinação da câmera'),
-            Slider(value: pitch, min: .15, max: math.pi / 2,
-              onChanged: (v) => setState(() => pitch = v)),
-          ])),
-          SizedBox(width: 160, child: Column(children: [
-            const Text('Zoom'),
-            Slider(value: zoom, min: .5, max: 2.5,
-              onChanged: (v) => setState(() => zoom = v)),
-          ])),
-        ]),
         const Divider(),
-        Text('Posição solar MANUAL · prévia geométrica',
+        Text('Sombra ao longo do dia e do ano',
             style: Theme.of(context).textTheme.titleMedium),
-        Text('Azimute ${sunAzimuth.toStringAsFixed(0)}°'),
-        Slider(value: sunAzimuth, min: 0, max: 360,
-          onChanged: (v) => setState(() => sunAzimuth = v)),
-        Text('Elevação ${sunElevation.toStringAsFixed(0)}°'),
-        Slider(value: sunElevation, min: -10, max: 90,
-          onChanged: (v) => setState(() => sunElevation = v)),
+        Text('Local do projeto: '
+            '${widget.project.latitude.toStringAsFixed(4)}°, '
+            '${widget.project.longitude.toStringAsFixed(4)}°'),
+        Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OutlinedButton.icon(
+              onPressed: _selectPreviewDate,
+              icon: const Icon(Icons.calendar_month_outlined),
+              label: Text('${previewDay.day.toString().padLeft(2, "0")}/'
+                  '${previewDay.month.toString().padLeft(2, "0")}/'
+                  '${previewDay.year}'),
+            ),
+            SizedBox(width: 178, child: DropdownButtonFormField<int>(
+              key: ValueKey(projectUtcOffset),
+              initialValue: projectUtcOffset,
+              decoration: const InputDecoration(
+                labelText: 'Fuso do projeto (UTC)'),
+              items: [
+                for (var h = -12; h <= 14; h++)
+                  DropdownMenuItem(
+                    value: h,
+                    child: Text('UTC${h >= 0 ? "+" : ""}$h'),
+                  ),
+              ],
+              onChanged: (v) {
+                if (v != null) setState(() => projectUtcOffset = v);
+              },
+            )),
+            IconButton.filledTonal(
+              onPressed: _toggleSunPlayback,
+              tooltip: sunPlayback == null ? 'Reproduzir o dia' : 'Pausar',
+              icon: Icon(sunPlayback == null
+                  ? Icons.play_arrow_rounded : Icons.pause_rounded),
+            ),
+          ]),
+        Text('Hora do projeto: $_previewClock '
+            '${sun.aboveHorizon ? "· Sol acima do horizonte" : "· Noite"}'),
+        Slider(
+          value: previewMinutes.toDouble(),
+          min: 0, max: 1425, divisions: 95,
+          label: _previewClock,
+          onChanged: (value) => setState(() =>
+              previewMinutes = value.round()),
+        ),
         if (current != null && current.kind == Solar3dObjectKind.panel)
-          Text('Bloqueio direto da placa selecionada: ${_previewShadows()[current.id]?.toStringAsFixed(3) ?? "sem feixe incidente"}'
-              ' (fração da área, não perda de energia elétrica)'),
+          Text('Placa selecionada: ${!sun.aboveHorizon ? "sem Sol direto" :
+              previewShades[current.id] == null ? "sem feixe direto na face" :
+              "${((previewShades[current.id] ?? 0) * 100).toStringAsFixed(1)}% "
+              "da área bloqueada"}'
+              ' · estimativa geométrica, não perda elétrica'),
+        const Text('As sombras seguem a trajetória solar calculada para '
+            'a latitude/longitude e a data/hora escolhidas. '
+            'O fuso é ajustável (padrão UTC−3), pois depende do projeto.'),
         const Divider(),
         Text('Objetos e módulos', style: Theme.of(context).textTheme.titleMedium),
         Wrap(spacing: 8, runSpacing: 6, children: [
@@ -620,7 +767,17 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           Text('Posição (m): Leste ${current.center.x.toStringAsFixed(2)}, '
               'altura ${current.center.y.toStringAsFixed(2)}, '
               'Norte ${current.center.z.toStringAsFixed(2)}'),
-          _adjustButtons(),
+          if (current.kind == Solar3dObjectKind.panel) ...[
+            Text('Altura do CENTRO da placa ao solo: '
+                '${current.center.y.toStringAsFixed(3)} m'),
+            if (current.center.y -
+                current.depth / 2 * math.sin(
+                  current.tiltDegrees * math.pi / 180) -
+                current.height / 2 * math.cos(
+                  current.tiltDegrees * math.pi / 180) < 0)
+              const Text('Atenção: parte da placa pode atravessar o '
+                  'plano do terreno. Confira altura e inclinação.'),
+          ],
           OutlinedButton.icon(
             onPressed: _editPosition,
             icon: const Icon(Icons.edit_location_alt_outlined),
