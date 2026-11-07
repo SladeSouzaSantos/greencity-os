@@ -61,6 +61,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     'HSP_HOURLY_URL',
     defaultValue: 'https://hsp.greencity.net.br/api/recurso-solar/horario',
   );
+  static const String localHourlyUrl =
+      'http://127.0.0.1:8000/recurso-solar/horario';
+  late final TextEditingController hourlyEndpointController =
+      TextEditingController(text: hourlyUrl);
 
   @override
   void initState() {
@@ -88,6 +92,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   @override
   void dispose() {
     sunPlayback?.cancel();
+    hourlyEndpointController.dispose();
     super.dispose();
   }
 
@@ -360,6 +365,16 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Future<void> _calculate() async {
     final doc = document;
     if (doc == null || busy) return;
+    final endpoint = hourlyEndpointController.text.trim();
+    final uri = Uri.tryParse(endpoint);
+    if (uri == null ||
+        !['https', 'http'].contains(uri.scheme) ||
+        uri.host.isEmpty || uri.userInfo.isNotEmpty ||
+        !uri.path.endsWith('/recurso-solar/horario')) {
+      _notice('Informe a URL completa da rota /recurso-solar/horario '
+          'em HTTP(S), sem credenciais.');
+      return;
+    }
     final scene = analysisScene;
     final panels = scene.objects.where((o) =>
         o.kind == Solar3dObjectKind.panel).toList();
@@ -386,7 +401,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       return;
     }
     setState(() { busy = true; progress = 'Preparando séries'; monthly = {}; });
-    final client = SolarResourceHourlyDataSource(dio: Dio(), endpoint: hourlyUrl);
+    final client = SolarResourceHourlyDataSource(
+        dio: Dio(), endpoint: endpoint);
     final output = <int, List<PanelMonthlyIrradianceLoss>>{};
     try {
       final months = allMonths ? List.generate(12, (i) => i + 1) : [month];
@@ -418,7 +434,38 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         setState(() => monthly = output);
       }
     } catch (err) {
-      _notice('Falha no cálculo horário: $err. Confirme o endpoint local/DEV.');
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Não foi possível consultar o recurso solar'),
+          content: SingleChildScrollView(child: Text(
+            '$err\n\n'
+            'Endpoint: $endpoint\n\n'
+            'A rota horária não está implantada na API HSP de produção. '
+            'Para testar no Windows, execute o HSP Simulator na branch '
+            'feature/hourly-resource-api com '
+            'python -m uvicorn api:app --host 127.0.0.1 --port 8000 '
+            'e selecione o endpoint local.\n\n'
+            'Os dois containers hsp-solar3d-lab-* executam outra API '
+            'experimental e NÃO oferecem esta rota. '
+            'A visualização das sombras 3D funciona sem o servidor.',
+          )),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Fechar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                hourlyEndpointController.text = localHourlyUrl;
+                Navigator.pop(context);
+              },
+              child: const Text('Usar API local Windows'),
+            ),
+          ],
+        ),
+      );
     } finally {
       if (mounted) setState(() { busy = false; progress = ''; });
     }
@@ -971,9 +1018,28 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         const Divider(),
         Text('HSP por placa · consulta horária opcional',
             style: Theme.of(context).textTheme.titleMedium),
-        const Text('O botão utiliza a nova rota HSP, ainda não implantada '
-            'em produção. Use --dart-define=HSP_HOURLY_URL=... para testar '
-            'contra a API local. Equipamentos e MPPTs não sofrem alteração.'),
+        const Text('A API de produção ainda não disponibiliza esta rota '
+            'experimental. Inicie o backend HSP com '
+            'feature/hourly-resource-api para calcular perdas mensais. '
+            'A visualização de sombras acima funciona sem API.'),
+        TextField(
+          controller: hourlyEndpointController,
+          decoration: const InputDecoration(
+            labelText: 'Endpoint horário HSP',
+            helperText: 'Pode ser alterado sem recompilar o aplicativo.',
+            prefixIcon: Icon(Icons.api_outlined),
+          ),
+          keyboardType: TextInputType.url,
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: () => setState(
+              () => hourlyEndpointController.text = localHourlyUrl),
+            icon: const Icon(Icons.computer_outlined),
+            label: const Text('Usar API local Windows · porta 8000'),
+          ),
+        ),
         Wrap(spacing: 14, children: [
           DropdownButton<int>(value: year, items: [
             for (final y in [2022,2023,2024])
