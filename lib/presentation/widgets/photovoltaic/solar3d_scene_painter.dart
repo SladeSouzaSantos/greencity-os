@@ -229,41 +229,57 @@ class Solar3dScenePainter extends CustomPainter {
   /// partial shade ON a panel is evaluated separately by ray casting.
   void _paintCastShadows(Canvas canvas, Solar3dProjection view) {
     if (sunElevationDegrees <= 1) return;
-    final azi = sunAzimuthDegrees * math.pi / 180;
-    final ele = sunElevationDegrees * math.pi / 180;
-    final sunEast = math.sin(azi) * math.cos(ele);
-    final sunNorth = math.cos(azi) * math.cos(ele);
-    final sunUp = math.sin(ele);
     final shadowPaint = Paint()
       ..color = const Color(0xff02070b).withValues(alpha: .65)
       ..style = PaintingStyle.fill;
     for (final object in scene.objects) {
       if (excludedIds.contains(object.id)) continue;
-      final ground = <Offset>[];
-      for (final dx in [-1.0, 1.0]) {
-        for (final dy in [-1.0, 1.0]) {
-          for (final dz in [-1.0, 1.0]) {
-            final world = view.transform(object, Solar3dVector(
-              dx * object.width / 2,
-              dy * object.height / 2,
-              dz * object.depth / 2,
-            ));
-            final distance = (math.max(0, world.y) / sunUp).clamp(0, 120);
-            ground.add(Offset(world.x, world.z));
-            ground.add(Offset(
-              world.x - sunEast * distance,
-              world.z - sunNorth * distance,
-            ));
-          }
-        }
-      }
-      final hull = _convexHull(ground);
+      final hull = groundShadowFootprint(
+        object: object,
+        view: view,
+        sunAzimuthDegrees: sunAzimuthDegrees,
+        sunElevationDegrees: sunElevationDegrees,
+      );
       if (hull.length < 3) continue;
       final points = hull.map((p) => view.project(
         Solar3dVector(p.dx, 0, p.dy))).toList();
-      final path = Path()..addPolygon(points, true);
-      canvas.drawPath(path, shadowPaint);
+      canvas.drawPath(Path()..addPolygon(points, true), shadowPaint);
     }
+  }
+
+  /// Returns a convex ground footprint in metric X/Z coordinates, independent
+  /// of canvas/rasterization. This is deliberately testable without a GPU.
+  static List<Offset> groundShadowFootprint({
+    required Solar3dObject object,
+    required Solar3dProjection view,
+    required double sunAzimuthDegrees,
+    required double sunElevationDegrees,
+  }) {
+    if (sunElevationDegrees <= 1) return const [];
+    final azi = sunAzimuthDegrees * math.pi / 180;
+    final ele = sunElevationDegrees * math.pi / 180;
+    final sunEast = math.sin(azi) * math.cos(ele);
+    final sunNorth = math.cos(azi) * math.cos(ele);
+    final sunUp = math.sin(ele);
+    final ground = <Offset>[];
+    for (final dx in [-1.0, 1.0]) {
+      for (final dy in [-1.0, 1.0]) {
+        for (final dz in [-1.0, 1.0]) {
+          final world = view.transform(object, Solar3dVector(
+            dx * object.width / 2,
+            dy * object.height / 2,
+            dz * object.depth / 2,
+          ));
+          final distance = (math.max(0, world.y) / sunUp).clamp(0, 120);
+          ground.add(Offset(world.x, world.z));
+          ground.add(Offset(
+            world.x - sunEast * distance,
+            world.z - sunNorth * distance,
+          ));
+        }
+      }
+    }
+    return _convexHull(ground);
   }
 
   /// Convex hull in the terrain X/Z coordinates. Sorting is deterministic
