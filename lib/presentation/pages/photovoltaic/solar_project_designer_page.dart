@@ -17,6 +17,7 @@ import '../../widgets/photovoltaic/project/project_summary_header.dart';
 import '../../widgets/photovoltaic/project/sizing_suggestion_card.dart';
 import '../../widgets/photovoltaic/project/solar_system_card.dart';
 import 'quote_details_page.dart';
+import 'solar3d_editor_page.dart';
 
 class SolarProjectDesignerPage extends StatefulWidget {
   final SolarProject project;
@@ -392,6 +393,31 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
               ),
 
               if (systems.isNotEmpty && systems.any((s) => s.arrays.isNotEmpty)) ...[
+                const Divider(height: 28),
+                Card(child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(children: [
+                    const Text('Laboratório 3D de Sombreamento',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    const Text('Visualize módulos individuais, obstáculos, '
+                      'MPPTs e HSP óptico. Não modifica o cálculo elétrico '
+                      'nem o orçamento atual.'),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: () {
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => Solar3dEditorPage(
+                            project: widget.project,
+                            systems: systems,
+                          ),
+                        ));
+                      },
+                      icon: const Icon(Icons.view_in_ar_outlined),
+                      label: const Text('ABRIR ANÁLISE 3D'),
+                    ),
+                  ]),
+                )),
                 const Divider(height: 40),
                 _buildOrcamentoPage(),
               ]

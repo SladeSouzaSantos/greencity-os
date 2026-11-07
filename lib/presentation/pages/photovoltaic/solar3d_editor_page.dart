@@ -377,8 +377,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           'não medições do telhado. A API HSP principal continua intacta.'
         ))),
         LayoutBuilder(builder: (context, constraints) {
-          final size = Size(constraints.maxWidth, math.min(440,
-              math.max(250, MediaQuery.of(context).size.height*.48)));
+          final size = Size(constraints.maxWidth, math.min(440.0,
+              math.max(250.0, MediaQuery.of(context).size.height*.48)));
           return GestureDetector(
             onTapDown: (event) => _onTapDown(event,size),
             child: SizedBox(height: size.height, width: size.width,

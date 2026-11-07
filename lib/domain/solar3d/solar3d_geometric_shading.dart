@@ -36,7 +36,8 @@ class Solar3dObject {
   });
 
   Solar3dObject copyWith({
-    Solar3dVector? center, String? stringId, int? mpptIndex,
+    Solar3dVector? center, String? stringId, bool clearString = false,
+    int? mpptIndex,
     double? width, double? depth, double? height,
     double? azimuthDegrees, double? tiltDegrees,
   }) => Solar3dObject(
@@ -45,7 +46,8 @@ class Solar3dObject {
     height: height ?? this.height,
     azimuthDegrees: azimuthDegrees ?? this.azimuthDegrees,
     tiltDegrees: tiltDegrees ?? this.tiltDegrees,
-    moduleModel: moduleModel, stringId: stringId ?? this.stringId,
+    moduleModel: moduleModel,
+    stringId: clearString ? null : (stringId ?? this.stringId),
     mpptIndex: mpptIndex ?? this.mpptIndex,
   );
 
