@@ -186,15 +186,27 @@ class Solar3dScenePainter extends CustomPainter {
             : Color.lerp(selectedColor, const Color(0xff61485a), shade)!;
         _fill(canvas, face, color.withValues(alpha: excluded ? .3 : .95),
             selected);
+        // Compact marker on each illuminated front face, without stacking
+        // a label over every panel. A missing value means no direct beam.
+        if (shade != null && shade > 0) {
+          final anchor = view.project(object.center);
+          canvas.drawCircle(anchor.translate(0, -7), 3.5, Paint()
+            ..color = const Color(0xffffb15e));
+        }
         canvas.drawLine(face[0],face[2], Paint()
             ..color = const Color(0xffe4efff).withValues(alpha:.16)
             ..strokeWidth=0.5);
       }
-      if (selected || isPanel) {
+      // Label only the selected panel: otherwise the preview becomes
+      // unreadable with multiple close-by modules and long shadow polygons.
+      // Every panel remains selectable through the list below the scene.
+      if (selected || !isPanel) {
         final blocked = directShadeByPanel[object.id];
         final label = isPanel
-            ? 'MPPT ${object.mpptIndex}${blocked != null && blocked > 0 ? " · ${(blocked * 100).round()}% sombra" : ""}'
-            : object.id;
+            ? '${object.id.split("/").last} · MPPT ${object.mpptIndex}'
+                '${blocked == null ? " · sem feixe" : " · ${(blocked * 100).round()}% sombra"}'
+            : object.id.length <= 16
+                ? object.id : '${object.id.substring(0, 16)}…';
         final layout = TextPainter(
           text: TextSpan(text: label, style: TextStyle(
             fontSize: selected ? 12 : 9,
@@ -230,7 +242,7 @@ class Solar3dScenePainter extends CustomPainter {
   void _paintCastShadows(Canvas canvas, Solar3dProjection view) {
     if (sunElevationDegrees <= 1) return;
     final shadowPaint = Paint()
-      ..color = const Color(0xff02070b).withValues(alpha: .65)
+      ..color = const Color(0xff02070b).withValues(alpha: .36)
       ..style = PaintingStyle.fill;
     for (final object in scene.objects) {
       if (excludedIds.contains(object.id)) continue;
