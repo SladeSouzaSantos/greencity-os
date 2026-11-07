@@ -81,9 +81,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   }
 
   void _notice(String text) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(text)),
+      );
+    }
   }
 
   Solar3dObject? get selected {
@@ -226,7 +228,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Map<String, double?> _previewShadows() {
     final current = selected;
     if (current == null || current.kind != Solar3dObjectKind.panel ||
-        document!.excludedIds.contains(current.id)) return {};
+        document!.excludedIds.contains(current.id)) {
+      return {};
+    }
     final value = Solar3dGeometricShading.blockedFraction(
       panel: current, scene: analysisScene,
       sunAzimuthDegrees: sunAzimuth,
