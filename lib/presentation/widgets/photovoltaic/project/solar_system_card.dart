@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../domain/entities/solar_system.dart';
 import '../../../../domain/entities/solar_array.dart';
+import '../../../../domain/solar3d/solar3d_optical_correction.dart';
 
 class SolarSystemCard extends StatelessWidget {
   final SolarSystem system;
@@ -8,6 +9,7 @@ class SolarSystemCard extends StatelessWidget {
   final VoidCallback onAddArray;
   final Function(SolarArray) onRemoveArray;
   final Function(SolarArray, int) onMpptChanged;
+  final Solar3dOpticalCorrection? opticalCorrection;
 
   const SolarSystemCard({
     super.key,
@@ -16,6 +18,7 @@ class SolarSystemCard extends StatelessWidget {
     required this.onAddArray,
     required this.onRemoveArray,
     required this.onMpptChanged,
+    this.opticalCorrection,
   });
 
   @override
@@ -97,7 +100,25 @@ class SolarSystemCard extends StatelessWidget {
 
     double hspIndividual = array.solarScenarioResult?.averageHspReal ?? 0.0;
     double hspEfetivo = system.getEffectiveHspForArray(array);
-    
+    final retention = opticalCorrection
+        ?.retentionBySystemMppt[system.id]?[array.mpptIndex];
+    double? hspOptical;
+    if (retention != null && retention.length == 12) {
+      final mpptArrays = system.arrays.where((a) =>
+        a.mpptIndex == array.mpptIndex &&
+        a.solarScenarioResult?.monthlyHspReal.length == 12).toList();
+      if (mpptArrays.isNotEmpty) {
+        var corrected = 0.0;
+        for (var month = 0; month < 12; month++) {
+          final minHsp = mpptArrays
+              .map((a) => a.solarScenarioResult!.monthlyHspReal[month])
+              .reduce((a, b) => a < b ? a : b);
+          corrected += minHsp * retention[month];
+        }
+        hspOptical = corrected / 12;
+      }
+    }
+
     // Cálculo de "perda por incompatibilidade" (mismatch)
     double mismatchLoss = hspIndividual > 0 
         ? (1 - (hspEfetivo / hspIndividual)) * 100 
@@ -151,9 +172,25 @@ class SolarSystemCard extends StatelessWidget {
             ), 
             const SizedBox(height: 4),          
             Text(
-              "Perda Sombra: ${perdaSombreamento.toStringAsFixed(1)}%",
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.redAccent),
+              "Perda Sombra HSP legado: ${perdaSombreamento.toStringAsFixed(1)}%",
+              style: const TextStyle(fontSize: 11,
+                  fontWeight: FontWeight.bold, color: Colors.redAccent),
             ),
+            if (hspOptical != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'HSP efetivo MPPT após correção óptica 3D: '
+                '${hspOptical.toStringAsFixed(2)} kWh/m²/dia (estimado)',
+                style: const TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.bold,
+                  color: Colors.deepOrange),
+              ),
+              const Text(
+                'É um ajuste óptico do MPPT; a perda elétrica por '
+                'sombra parcial não está modelada.',
+                style: TextStyle(fontSize: 10),
+              ),
+            ],
             if (mismatchLoss > 1) 
             Padding(
               padding: const EdgeInsets.only(top: 4),

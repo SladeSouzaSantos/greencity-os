@@ -25,6 +25,9 @@ class SizingSuggestionCard extends StatelessWidget {
     final double target = project.effectiveConsumption;
     final int current = project.totalAverageAnnualGeneration;
     final double percent = target > 0 ? (current / target).clamp(0.0, 1.0) : 0.0;
+    final optical = project.hasAppliedOpticalCorrection;
+    final baseline = project.baselineAverageAnnualGeneration;
+    final saved = baseline - current;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 10),
@@ -36,7 +39,12 @@ class SizingSuggestionCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text("Geração do Sistema Projetado", style: TextStyle(fontWeight: FontWeight.bold)),
+                Flexible(child: Text(
+                  optical
+                      ? 'Geração projetada · correção óptica 3D'
+                      : 'Geração do Sistema Projetado',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                )),
                 Text("${current.toStringAsFixed(1)} / ${target.toStringAsFixed(0)} kWh", 
                   style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
               ],
@@ -50,7 +58,54 @@ class SizingSuggestionCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(5),
             ),
             const SizedBox(height: 5),
-            Text("${(percent * 100).toStringAsFixed(1)}% da meta atingida", style: const TextStyle(fontSize: 12)),
+            Text("${(percent * 100).toStringAsFixed(1)}% da meta atingida",
+              style: const TextStyle(fontSize: 12)),
+            if (optical) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Sem sombra 3D: $baseline kWh/mês · '
+                  'Com correção óptica: $current kWh/mês · '
+                  'Diferença: −$saved kWh/mês',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(height: 5),
+              const Text(
+                'Estimativa óptica experimental. As perdas de geração '
+                'elétricas por strings, bypass e rastreamento MPPT '
+                'ainda não foram validadas. O ajuste é desta sessão.',
+                style: TextStyle(fontSize: 11),
+              ),
+              ExpansionTile(
+                title: const Text('Comparar os 12 meses · sem/com sombra 3D',
+                  style: TextStyle(fontSize: 12)),
+                children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(columns: const [
+                      DataColumn(label: Text('Mês')),
+                      DataColumn(label: Text('Base (kWh)')),
+                      DataColumn(label: Text('3D óptico (kWh)')),
+                      DataColumn(label: Text('Diferença')),
+                    ], rows: [
+                      for (var m = 0; m < 12; m++)
+                        DataRow(cells: [
+                          DataCell(Text('${m+1}')),
+                          DataCell(Text(
+                            '${project.baselineMonthlyGeneration[m]}')),
+                          DataCell(Text(
+                            '${project.totalMonthlyGeneration[m]}')),
+                          DataCell(Text(
+                            '−${project.baselineMonthlyGeneration[m] -
+                               project.totalMonthlyGeneration[m]} kWh')),
+                        ]),
+                    ]),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

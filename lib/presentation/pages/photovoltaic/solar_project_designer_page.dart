@@ -378,6 +378,8 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
               ] else ...[
                 ...systems.map((s) => SolarSystemCard(
                   system: s,
+                  opticalCorrection: widget.project.hasAppliedOpticalCorrection
+                      ? widget.project.opticalCorrection : null,
                   onDeleteSystem: (){
                     setState(() => systems.remove(s));
                     _onCalculatePressed();
