@@ -162,18 +162,20 @@ class Solar3dGeometricShading {
     return far >= math.max(near, _eps);
   }
 
-  /// Returns the fraction of DIRECT front-face area blocked, or null when
-  /// front-side beam incidence is impossible. Grid centers can miss narrow
-  /// objects; convergence tests are required before engineering use.
-  static double? blockedFraction({
+  /// A diagnostic sample grid on the FRONT face of the individual panel.
+  /// The shade cast on the GROUND is not equivalent to shade on the module.
+  /// A null result means the sun is behind the face or below the horizon,
+  /// NOT a measured 0% direct-irradiance loss.
+  static Solar3dPanelShadeInspection? inspectPanel({
     required Solar3dObject panel,
     required Solar3dScene scene,
     required double sunAzimuthDegrees,
     required double sunElevationDegrees,
-    int rows = 6, int columns = 4,
+    int rows = 12,
+    int columns = 8,
   }) {
     if (panel.kind != Solar3dObjectKind.panel ||
-        rows < 2 || rows > 12 || columns < 2 || columns > 12) {
+        rows < 2 || rows > 24 || columns < 2 || columns > 24) {
       throw const FormatException('Amostragem do módulo inválida');
     }
     final sunlight = _towardSun(sunAzimuthDegrees, sunElevationDegrees);
@@ -181,6 +183,7 @@ class Solar3dGeometricShading {
     if (sunlight.y <= 0 || sunlight.dot(basis[1]) <= 1e-12) return null;
     final obstacles = scene.objects.where((o) => o.id != panel.id).toList();
     final obstacleBasis = obstacles.map(_basis).toList();
+    final blockers = <String, int>{};
     var blocked = 0;
     for (var row = 0; row < rows; row++) {
       for (var col = 0; col < columns; col++) {
@@ -192,13 +195,34 @@ class Solar3dGeometricShading {
         for (var i = 0; i < obstacles.length; i++) {
           if (_intersectsBox(point, sunlight, obstacles[i], obstacleBasis[i])) {
             blocked++;
+            final id = obstacles[i].id;
+            blockers[id] = (blockers[id] ?? 0) + 1;
             break;
           }
         }
       }
     }
-    return blocked / (rows * columns);
+    return Solar3dPanelShadeInspection(
+      blockedSamples: blocked,
+      totalSamples: rows * columns,
+      firstHitByObject: Map.unmodifiable(blockers),
+    );
   }
+
+  /// Direct-beam front-face blocked AREA fraction; not DC/AC energy loss.
+  static double? blockedFraction({
+    required Solar3dObject panel,
+    required Solar3dScene scene,
+    required double sunAzimuthDegrees,
+    required double sunElevationDegrees,
+    int rows = 6,
+    int columns = 4,
+  }) => inspectPanel(
+    panel: panel, scene: scene,
+    sunAzimuthDegrees: sunAzimuthDegrees,
+    sunElevationDegrees: sunElevationDegrees,
+    rows: rows, columns: columns,
+  )?.fraction;
 
   /// Hourly weighted irradiance only, not DC electrical yield. Complexity
   /// budget avoids blocking the UI thread for industrial-sized scenes.
@@ -261,6 +285,23 @@ class Solar3dGeometricShading {
     }
     return monthly;
   }
+}
+
+/// Optical ray samples that intersect an opaque object before the sun.
+/// A first-hit attribution is not a partition of electric or optical yield.
+class Solar3dPanelShadeInspection {
+  final int blockedSamples;
+  final int totalSamples;
+  final Map<String, int> firstHitByObject;
+
+  const Solar3dPanelShadeInspection({
+    required this.blockedSamples,
+    required this.totalSamples,
+    required this.firstHitByObject,
+  });
+
+  double get fraction => totalSamples == 0 ? 0 :
+      blockedSamples / totalSamples;
 }
 
 class PanelMonthlyIrradianceLoss {
