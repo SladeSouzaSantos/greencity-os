@@ -18,6 +18,7 @@ import '../../widgets/photovoltaic/project/sizing_suggestion_card.dart';
 import '../../widgets/photovoltaic/project/solar_system_card.dart';
 import 'quote_details_page.dart';
 import 'solar3d_editor_page.dart';
+import '../../../domain/solar3d/solar3d_optical_correction.dart';
 
 class SolarProjectDesignerPage extends StatefulWidget {
   final SolarProject project;
@@ -189,6 +190,8 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
     }
     
     widget.project.systems = systems;
+    // Recalculating the original HSP invalidates an applied 3D scenario.
+    widget.project.opticalCorrection = null;
 
     // 2. Criamos uma lista única de cenários para o BLoC calcular
     // O BLoC precisa de List<SolarScenario> para processar a radiação
@@ -349,6 +352,17 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                 onDetailsTap: () {},
               ),
 
+              if (widget.project.hasAppliedOpticalCorrection)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => setState(
+                      () => widget.project.opticalCorrection = null),
+                    icon: const Icon(Icons.restore_outlined),
+                    label: const Text('Remover correção 3D e comparar '
+                        'geração original'),
+                  ),
+                ),
               const SizedBox(height: 20),
               const Divider(),
 
@@ -401,17 +415,42 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                       style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 6),
                     const Text('Visualize módulos individuais, obstáculos, '
-                      'MPPTs e HSP óptico. Não modifica o cálculo elétrico '
-                      'nem o orçamento atual.'),
+                      'MPPTs e HSP óptico. Calcule os 12 meses para aplicar '
+                      'uma correção óptica experimental à geração estimada, '
+                      'sem alterar as conexões elétricas.'),
                     const SizedBox(height: 8),
                     FilledButton.icon(
-                      onPressed: () {
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => Solar3dEditorPage(
-                            project: widget.project,
-                            systems: systems,
+                      onPressed: () async {
+                        // The editor can modify and persist geometry even if
+                        // dismissed by Back. Invalidate old optical results
+                        // on entry; a fresh full-year analysis is required.
+                        setState(() => widget.project.opticalCorrection = null);
+                        final correction = await Navigator.push<
+                            Solar3dOpticalCorrection>(
+                          context, MaterialPageRoute(
+                            builder: (_) => Solar3dEditorPage(
+                              project: widget.project, systems: systems),
                           ),
-                        ));
+                        );
+                        if (!mounted || correction == null) return;
+                        if (!correction.isValidFor(systems)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text(
+                              'Configuração elétrica alterada; refaça '
+                              'a análise óptica 3D.')),
+                          );
+                          return;
+                        }
+                        setState(() {
+                          widget.project.systems = systems;
+                          widget.project.opticalCorrection = correction;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text(
+                            'Correção óptica aplicada à geração estimada '
+                            'desta sessão. Confira a comparação sem/com '
+                            'sombra no cartão de geração.')),
+                        );
                       },
                       icon: const Icon(Icons.view_in_ar_outlined),
                       label: const Text('ABRIR ANÁLISE 3D'),

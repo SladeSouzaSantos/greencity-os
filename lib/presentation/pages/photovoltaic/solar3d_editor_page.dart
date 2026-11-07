@@ -12,6 +12,7 @@ import '../../../domain/entities/solar_project.dart';
 import '../../../domain/entities/solar_system.dart';
 import '../../../domain/solar3d/solar3d_geometric_shading.dart';
 import '../../../domain/solar3d/solar3d_plan_factory.dart';
+import '../../../domain/solar3d/solar3d_optical_correction.dart';
 import '../../../domain/solar3d/solar3d_scene_document.dart';
 import '../../../domain/solar3d/solar3d_sun_position.dart';
 import '../../widgets/photovoltaic/solar3d_scene_painter.dart';
@@ -507,6 +508,60 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       }
     }
     return nearest;
+  }
+
+  /// Explicitly hand the optical scenario back to the generation screen.
+  /// It changes only the monthly energy-estimate overlay in this session.
+  /// The actual electrical topology, production and quote are not silently
+  /// rewritten; no string mismatch/bypass yield is asserted.
+  Future<void> _applyOpticalToProject() async {
+    if (busy) return;
+    try {
+      final doc = document!;
+      final correction = Solar3dOpticalCorrection.fromAnalysis(
+        systems: widget.systems,
+        scene: doc.scene,
+        monthly: monthly,
+        yearUtc: year,
+        excludedPanelIds: doc.excludedIds,
+      );
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Aplicar cenário óptico à geração?'),
+          content: Text(
+            'Serão considerados ${correction.panelCount} módulos e '
+            'os 12 meses de ${correction.weatherYearUtc}. '
+            'O GreenCity OS aplicará uma única correção óptica, '
+            'ponderada por módulo em cada MPPT, sobre o HSP já usado '
+            'no dimensionamento. A tela da geração e seus totais '
+            'mensais serão recalculados.\n\n'
+            'ATENÇÃO: É uma estimativa experimental de irradiância; '
+            'não modela eletricamente strings, bypass nem mismatch '
+            'sob sombras parciais. Não representa geração AC '
+            'validada e ainda não é salva como projeto homologado. '
+            'Os obstáculos da API HSP convencional precisam estar '
+            'desativados para evitar dupla contagem.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Aplicar estimativa óptica'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirm != true) return;
+      Navigator.pop(context, correction);
+    } on FormatException catch (error) {
+      _notice(error.message);
+    } on StateError catch (error) {
+      _notice(error.message);
+    }
   }
 
   void _onTapDown(TapDownDetails details, Size size) {
@@ -1053,7 +1108,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           DropdownButton<int>(value: year, items: [
             for (final y in [2022,2023,2024])
               DropdownMenuItem(value:y,child:Text('Ano $y')),
-          ],onChanged:busy ? null : (v) {if(v!=null)setState(()=>year=v);}),
+          ],onChanged:busy ? null : (v) {
+            if (v != null) setState(() {
+              year = v;
+              monthly = {};
+            });
+          }),
           DropdownButton<int>(value:month, items: [
             for(var m=1;m<=12;m++)
               DropdownMenuItem(value:m,child:Text('Mês $m')),
@@ -1066,6 +1126,33 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           label:Text(busy ? progress : 'Calcular perdas ópticas por placa')),
         if (busy) const LinearProgressIndicator(),
         _monthlyTable(),
+        const SizedBox(height: 12),
+        Card(child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Aplicar na geração estimada',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 7),
+              const Text('Necessário calcular os 12 meses para todas '
+                  'as placas. A correção será aplicada uma única vez '
+                  'por MPPT, separando o cenário sem sombra do ajuste '
+                  'óptico. O fator não representa ainda o comportamento '
+                  'elétrico das strings.'),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: !busy && monthly.length == 12
+                    ? _applyOpticalToProject : null,
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('APLICAR CORREÇÃO ÓPTICA NA GERAÇÃO'),
+              ),
+              if (monthly.length != 12)
+                const Text('Selecione “Calcular 12 meses” e execute '
+                    'o cálculo completo para habilitar a aplicação.'),
+            ],
+          ),
+        )),
         const SizedBox(height: 12),
         const Text('Esta tela não substitui o cálculo do arranjo no GreenCity OS. '
             'Perdas por MPPT exigem modelagem elétrica adicional (strings, '
