@@ -158,3 +158,57 @@ Na tela **ABRIR ANÁLISE 3D**:
 
 **Limitação:** a vista Flutter nativa continua sendo projeção 3D
 simplificada e não um ambiente Three.js com seleção/perspectiva GPU completa.
+
+## Editor 3D — centro do módulo, touch e ciclo solar (2026-11-07)
+
+1. **Altura do centro ao solo:** a configuração original
+   `SolarScenario.distanceToGround` é respeitada literalmente como o
+   valor Y do centro de cada módulo. O editor não eleva a placa
+   automaticamente com base na inclinação. Se uma borda atravessar
+   o terreno, aparece um aviso geométrico e deve-se revisar o layout.
+   Em cenas antigas já salvas, o editor preserva a altura editada e
+   oferece **Usar altura do centro cadastrada** para reaplicar o valor
+   do projeto sem apagar as demais posições.
+2. **Navegação:** toque/arraste sobre uma placa ou obstáculo para mover
+   no terreno X/Z mantendo Y. Toque/arraste no terreno vazio para
+   **girar a câmera**. Com dois dedos, **pinça para zoom e giro**;
+   a roda do mouse aproxima/afasta no Windows. Os botões antigos
+   de Oeste/Leste/Norte/Sul/Altura e os sliders de câmera/zoom
+   foram retirados.
+3. **Data e horário:** o controle manual de azimute/elevação solar foi
+   substituído por **calendário + horário em passos de 15 minutos**.
+   Há opção de reproduzir/pausar o movimento do Sol durante o dia.
+   O Sol é calculado usando **latitude e longitude do SolarProject**,
+   com efemérides geométricas NOAA e fuso do projeto explícito
+   (UTC-3 inicial, ajustável por usuário). O fuso não é inferido
+   automaticamente pelo celular nem pela longitude.
+4. **Sombras visíveis:** edifícios/obstáculos e módulos geram
+   projeções de sombra direta no solo conforme a data/hora; módulos
+   indicam tonalidade/percentual de **área do feixe direto bloqueada**
+   por raycasting. À noite não são projetadas sombras solares.
+   Objetos ocultos visualmente continuam produzindo sombra;
+   objetos marcados como *Ignorar na análise* não participam
+   do cálculo. As perdas de irradiância mensal continuam separadas
+   do motor óptico do relógio e dos efeitos elétricos MPPT.
+5. **Verificação rápida:** selecionar uma placa e um obstáculo,
+   avançar o horário entre 08h e 16h locais e observar deslocamento
+   da sombra; trocar junho/dezembro com a mesma latitude e comparar
+   trajetórias; testar zoom, rotação da câmera, ocultar e ignorar;
+   conferir a altura do centro e salvar/reabrir.
+
+### Precisão e restrições
+
+- A posição solar da **prévia visual** não substitui pvlib/NASA POWER
+  na consulta de POA mensal, e não inclui correção atmosférica de
+  refração/horizonte local. Perdas de irradiância mensais usam
+  `/recurso-solar/horario` (backend HSP separado).
+- A sombra volumétrica desenhada no solo é o casco convexo da projeção
+  dos cantos das caixas/módulos, uma **visualização aproximada**.
+  A porcentagem bloqueada **na face da placa** é calculada com raycasting
+  de amostras, separadamente.
+- O editor não altera a geração energética comercial do GreenCity OS.
+  Não tratar área sombreada como mesma porcentagem de perda elétrica.
+- O controle de fuso usa offsets UTC em horas inteiras; fusos
+  fracionários ou transições de horário de verão não são modelados
+  pela prévia. A data/hora solar mostrada deve ser entendida como
+  horário civil de referência informado pelo usuário.
