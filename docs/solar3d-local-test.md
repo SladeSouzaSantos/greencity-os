@@ -598,3 +598,18 @@ arrastar objetos e girar/zoom/pan da câmera por gestos no canvas.
 **Smoke manual Android:** testar módulo e lateral do obstáculo com um
 dedo, arrastar o fundo e confirmar que a vista não gira, mudar N/L/S/O,
 inclinar com ↑/↓, zoom +/−, salvar/reabrir e executar HSP.
+
+## Navegação 3D incremental e direcional de câmera
+
+- Na bússola N/S/L/O, os dois botões de giro **esquerda/direita**
+  modificam `yaw` em passos de 0,18 radianos. As setas de
+  inclinação **↑/↓** continuam mudando `pitch` em passos de 0,16.
+  São dois eixos de rotação 3D, independentes da geometria solar.
+- Um segundo direcional de quatro setas, **MOVER VISTA**, aplica
+  deslocamentos de 32 pixels à projeção da câmera (cima/baixo/
+  esquerda/direita) sem editar X/Z/Y dos objetos.
+  O centro do direcional restaura apenas `cameraPan`.
+- O zoom continua nos botões + e -, sem interferência no arrasto de
+  objetos. A altura mínima da viewport 3D passa a 390 px para impedir
+  que controles de orientação e deslocamento se sobreponham em
+  celulares de tela menor.

@@ -13,6 +13,9 @@ class Solar3dCameraControls extends StatelessWidget {
   final double zoom;
   final ValueChanged<double> onHeading;
   final ValueChanged<double> onPitchStep;
+  final ValueChanged<double> onYawStep;
+  final ValueChanged<Offset> onPanStep;
+  final VoidCallback onResetPan;
   final VoidCallback onDefaultPerspective;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
@@ -24,6 +27,9 @@ class Solar3dCameraControls extends StatelessWidget {
     required this.zoom,
     required this.onHeading,
     required this.onPitchStep,
+    required this.onYawStep,
+    required this.onPanStep,
+    required this.onResetPan,
     required this.onDefaultPerspective,
     required this.onZoomIn,
     required this.onZoomOut,
@@ -90,6 +96,64 @@ class Solar3dCameraControls extends StatelessWidget {
                   onPressed: () => onPitchStep(-.16),
                 )),
               ]),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                SizedBox(width: 56, height: 35, child: IconButton(
+                  tooltip: 'Girar câmera para esquerda',
+                  icon: const Icon(Icons.rotate_left),
+                  onPressed: () => onYawStep(-.18),
+                )),
+                SizedBox(width: 56, height: 35, child: IconButton(
+                  tooltip: 'Girar câmera para direita',
+                  icon: const Icon(Icons.rotate_right),
+                  onPressed: () => onYawStep(.18),
+                )),
+              ]),
+            ]),
+          ),
+        ),
+      ),
+      Positioned(
+        right: 8, bottom: 8,
+        child: Material(
+          color: colors.surface.withValues(alpha: .95),
+          elevation: 3, borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('MOVER VISTA', style: TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.bold)),
+              SizedBox(width: 40, height: 37, child: IconButton(
+                tooltip: 'Deslocar vista para cima',
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.arrow_upward),
+                onPressed: () => onPanStep(const Offset(0, -32)),
+              )),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                SizedBox(width: 40, height: 37, child: IconButton(
+                  tooltip: 'Deslocar vista para esquerda',
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => onPanStep(const Offset(-32, 0)),
+                )),
+                SizedBox(width: 40, height: 37, child: IconButton(
+                  tooltip: 'Centralizar deslocamento da vista',
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.filter_center_focus, size: 19),
+                  onPressed: onResetPan,
+                )),
+                SizedBox(width: 40, height: 37, child: IconButton(
+                  tooltip: 'Deslocar vista para direita',
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.arrow_forward),
+                  onPressed: () => onPanStep(const Offset(32, 0)),
+                )),
+              ]),
+              SizedBox(width: 40, height: 37, child: IconButton(
+                tooltip: 'Deslocar vista para baixo',
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.arrow_downward),
+                onPressed: () => onPanStep(const Offset(0, 32)),
+              )),
             ]),
           ),
         ),

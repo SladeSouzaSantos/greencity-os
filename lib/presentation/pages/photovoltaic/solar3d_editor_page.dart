@@ -1049,6 +1049,21 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     });
   }
 
+  void _changeCameraYaw(double delta) {
+    _onScaleEnd();
+    setState(() => yaw = _wrapYaw(yaw + delta));
+  }
+
+  void _panCamera(Offset delta) {
+    _onScaleEnd();
+    setState(() => cameraPan += delta);
+  }
+
+  void _resetCameraPan() {
+    _onScaleEnd();
+    setState(() => cameraPan = Offset.zero);
+  }
+
   void _zoomCamera(bool zoomIn) {
     _onScaleEnd();
     setState(() {
@@ -1244,8 +1259,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           'não medições do telhado. A API HSP principal continua intacta.'
         ))),
         LayoutBuilder(builder: (context, constraints) {
-          final size = Size(constraints.maxWidth, math.min(440.0,
-              math.max(250.0, MediaQuery.of(context).size.height*.48)));
+          // Reserve space for camera orientation AND the four-way viewport
+          // controls without overlaying each other on compact phones.
+          final size = Size(constraints.maxWidth, math.min(520.0,
+              math.max(390.0, MediaQuery.of(context).size.height*.58)));
           return SizedBox(
             width: size.width, height: size.height,
             child: Stack(children: [
@@ -1284,6 +1301,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                   yaw: yaw, pitch: pitch, zoom: zoom,
                   onHeading: _setCameraHeading,
                   onPitchStep: _changeCameraPitch,
+                  onYawStep: _changeCameraYaw,
+                  onPanStep: _panCamera,
+                  onResetPan: _resetCameraPan,
                   onDefaultPerspective: _restorePerspective,
                   onZoomIn: () => _zoomCamera(true),
                   onZoomOut: () => _zoomCamera(false),
@@ -1293,10 +1313,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           );
         }),
         const SizedBox(height: 8),
-        const Text('CONTROLES DA CÂMERA 3D: toque N/S/L/O na bússola '
-            'para girar horizontalmente, ou use as setas acima/abaixo '
-            'para inclinar a câmera em 3D. + / − aproximam e afastam. '
-            'O botão central restaura a perspectiva.'),
+        const Text('CÂMERA 3D: N/S/L/O escolhem a orientação; '
+            'os ícones de giro à esquerda/direita rotacionam '
+            'horizontalmente e as setas de inclinação elevam/abaixam '
+            'a perspectiva. +/− controlam o zoom. '
+            'As quatro setas MOVER VISTA deslocam a imagem sem mover '
+            'placas e obstáculos.'),
         const Text('A ÁREA 3D É PARA MOVER OBJETOS: toque e arraste '
             'uma placa ou obstáculo em X/Z, mantendo sua altura. '
             'Arrastar o fundo não gira a câmera. '
