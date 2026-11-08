@@ -19,7 +19,7 @@ class Solar3dProjection {
 
   Solar3dProjection({
     required this.size, required this.scene, this.frameScene,
-    required this.y, required this.pitch, required this.zoom,
+    required this.yaw, required this.pitch, required this.zoom,
     this.cameraPan = Offset.zero,
   }) {
     // Keep the camera frame fixed while dragging objects; otherwise

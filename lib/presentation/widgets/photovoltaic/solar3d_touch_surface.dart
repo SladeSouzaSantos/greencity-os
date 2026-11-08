@@ -93,8 +93,12 @@ class _Solar3dTouchSurfaceState extends State<Solar3dTouchSurface> {
       final scale = previousDistance > 1e-3
           ? distance / previousDistance : 1.0;
       var rotation = angle - previousAngle;
-      if (rotation > math.pi) rotation -= 2 * math.pi;
-      if (rotation < -math.pi) rotation += 2 * math.pi;
+      if (rotation > math.pi) {
+        rotation -= 2 * math.pi;
+      }
+      if (rotation < -math.pi) {
+        rotation += 2 * math.pi;
+      }
       widget.onMultiUpdate(
         focal,
         focal - previousFocal,
