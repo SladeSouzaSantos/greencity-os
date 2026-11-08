@@ -83,6 +83,20 @@ void main() {
     expect(result.objects[2].center.z, 7);
   });
 
+  test('confirmar valores iguais não altera a cena nem sua identidade', () {
+    final unchanged = Solar3dBulkMove.apply(
+      scene: base,
+      selectedIds: {'INV1/1/1', 'obstacle'},
+    );
+    expect(identical(unchanged, base), isTrue);
+    final sameHeight = Solar3dBulkMove.apply(
+      scene: base,
+      selectedIds: {'obstacle'},
+      commonHeight: 0,
+    );
+    expect(identical(sameHeight, base), isTrue);
+  });
+
   test('movimento atômico recusa sair do solo ou dos limites X/Z', () {
     expect(() => Solar3dBulkMove.apply(
       scene: base, selectedIds: {'INV1/1/1', 'obstacle'},

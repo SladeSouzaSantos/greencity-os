@@ -38,6 +38,13 @@ class Solar3dBulkMove {
         else
           object,
     ];
+    final unchanged = transformed.asMap().entries.every((entry) {
+      final before = scene.objects[entry.key].center;
+      final after = entry.value.center;
+      return before.x == after.x &&
+          before.y == after.y && before.z == after.z;
+    });
+    if (unchanged) return scene;
     final result = Solar3dScene(transformed);
     result.validate();
     return result;

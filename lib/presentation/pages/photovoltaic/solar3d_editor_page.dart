@@ -424,6 +424,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         elevation: request.commonHeight ? 0 : request.height,
         commonHeight: request.commonHeight ? request.height : null,
       );
+      // Do not invalidate a confirmed 12-month optical correction when
+      // the user submits an empty/no-op group transformation.
+      if (identical(next, doc.scene)) return;
       _changeDocument(Solar3dSceneDocument(
         scene: next,
         hiddenIds: doc.hiddenIds,
