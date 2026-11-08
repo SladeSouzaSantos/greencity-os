@@ -1,5 +1,6 @@
 import 'solar_array.dart';
 import 'inverter.dart';
+import '../solar3d/solar3d_optical_correction.dart';
 
 class SolarSystem {
   final String id;
@@ -18,6 +19,7 @@ class SolarSystem {
     int monthIndex,
     List<double>? monthlyTmax, {
     Map<int, List<double>>? opticalRetentionByMppt,
+    Map<int, Solar3dMpptOpticalGroup>? opticalMpptGroups,
   }) {
     if (arrays.isEmpty || arrays.any((a) => a.solarScenarioResult == null)) return 0;
 
@@ -45,6 +47,36 @@ class SolarSystem {
     Map<int, List<SolarArray>> mpptGroups = {};
     for (var array in arrays) {
       mpptGroups.putIfAbsent(array.mpptIndex, () => []).add(array);
+    }
+
+    // A 3D study can assign individual modules to a different MPPT of
+    // THIS inverter. Use its hypothetical group powers + baseline HSP
+    // rather than silently applying a new MPPT ratio to old array wiring.
+    // Production wiring in SolarArray is not modified.
+    if (opticalMpptGroups != null) {
+      final accountedPower = opticalMpptGroups.values.fold<double>(
+          0, (sum, group) => sum + group.powerWp);
+      if ((accountedPower - totalSystemPower).abs() > 1e-5) {
+        throw const FormatException(
+          'Potência 3D não corresponde ao inversor de referência');
+      }
+      for (final entry in opticalMpptGroups.entries) {
+        final mppt = entry.key, group = entry.value;
+        if (mppt < 1 || mppt > inverter.mpptCount ||
+            group.baselineMonthlyHsp.length != 12 ||
+            group.retentionMonthly.length != 12) {
+          throw const FormatException('Grupo MPPT óptico inválido');
+        }
+        final ratio = group.retentionMonthly[monthIndex];
+        final baseHsp = group.baselineMonthlyHsp[monthIndex];
+        if (!ratio.isFinite || ratio < 0 || ratio > 1 ||
+            !baseHsp.isFinite || baseHsp < 0) {
+          throw const FormatException('Irradiância MPPT óptica inválida');
+        }
+        totalGeneration += (group.powerWp / 1000.0 * baseHsp * ratio *
+          diasNoMes * fatorDesempenho * fatorTemperatura * eficienciaInversor);
+      }
+      return totalGeneration.ceil();
     }
 
     for (final mppt in mpptGroups.entries) {

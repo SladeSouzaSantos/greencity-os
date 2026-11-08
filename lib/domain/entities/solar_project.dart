@@ -53,6 +53,8 @@ class SolarProject {
           tMaxList,
           opticalRetentionByMppt:
               applied?.retentionBySystemMppt[system.id],
+          opticalMpptGroups:
+              applied?.groupsBySystemMppt[system.id],
         );
       }
     }
