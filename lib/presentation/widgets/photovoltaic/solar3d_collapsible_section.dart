@@ -26,7 +26,11 @@ class Solar3dCollapsibleSection extends StatefulWidget {
 }
 
 class _Solar3dCollapsibleSectionState
-    extends State<Solar3dCollapsibleSection> {
+    extends State<Solar3dCollapsibleSection>
+    with AutomaticKeepAliveClientMixin<Solar3dCollapsibleSection> {
+  @override
+  bool get wantKeepAlive => true;
+
   late bool expanded;
 
   @override
@@ -36,7 +40,9 @@ class _Solar3dCollapsibleSectionState
   }
 
   @override
-  Widget build(BuildContext context) => Card(
+  Widget build(BuildContext context) {
+    super.build(context);
+    return Card(
     margin: const EdgeInsets.symmetric(vertical: 4),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -67,4 +73,5 @@ class _Solar3dCollapsibleSectionState
       ],
     ),
   );
+  }
 }

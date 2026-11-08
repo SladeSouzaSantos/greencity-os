@@ -81,7 +81,9 @@ void main() {
       await tester.pumpAndSettle();
 
       final objectsHeader = find.text('Objetos, posições e MPPTs');
-      await tester.ensureVisible(objectsHeader);
+      // ListView lazily instantiates sections beyond a phone viewport.
+      await tester.scrollUntilVisible(objectsHeader, 260,
+          scrollable: find.byType(Scrollable).first);
       await tester.tap(objectsHeader);
       await tester.pumpAndSettle();
 
@@ -114,7 +116,8 @@ void main() {
       await tester.tap(objectsHeader); // unmount MPPT controls
       await tester.pumpAndSettle();
       final hspHeader = find.text('Calcular perdas ópticas · 12 meses');
-      await tester.ensureVisible(hspHeader);
+      await tester.scrollUntilVisible(hspHeader, 260,
+          scrollable: find.byType(Scrollable).first);
       await tester.tap(hspHeader); // mount an endpoint editor and year dropdown
       await tester.pumpAndSettle();
       expect(find.text('Mais recente completo (automático)'),
