@@ -12,6 +12,7 @@ import '../../../domain/entities/solar_project.dart';
 import '../../../domain/entities/solar_system.dart';
 import '../../../domain/solar3d/solar3d_geometric_shading.dart';
 import '../../../domain/solar3d/solar3d_plan_factory.dart';
+import '../../../domain/solar3d/solar3d_panel_height.dart';
 import '../../../domain/solar3d/solar3d_optical_correction.dart';
 import '../../../domain/solar3d/solar3d_electrical_audit.dart';
 import '../../../domain/solar3d/solar3d_scene_document.dart';
@@ -290,13 +291,13 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     ));
   }
 
-   double? _registeredCenterHeight(String objectId) {
+  double? _registeredLowerEdgeHeight(String objectId) {
     final base = catalogInitialScene;
     if (base == null) return null;
     for (final object in base.objects) {
       if (object.id == objectId &&
           object.kind == Solar3dObjectKind.panel) {
-        return object.center.y;
+        return Solar3dPanelHeight.lowerEdgeOf(object);
       }
     }
     return null;
@@ -305,10 +306,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   void _restoreRegisteredHeight() {
     final panel = selected;
     if (panel == null || panel.kind != Solar3dObjectKind.panel) return;
-    final height = _registeredCenterHeight(panel.id);
-    if (height == null) return;
-    _replace(panel.copyWith(center: Solar3dVector(
-      panel.center.x, height, panel.center.z)));
+    final clearance = _registeredLowerEdgeHeight(panel.id);
+    if (clearance == null) return;
+    _replace(Solar3dPanelHeight.withLowerEdge(panel,
+      math.max(0, clearance)));
   }
 
   void _toggle({required bool visibility}) {
@@ -448,9 +449,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   }
 
   static double _panelLowestPoint(Solar3dObject panel) =>
-      panel.center.y -
-      panel.depth / 2 * math.sin(panel.tiltDegrees * math.pi / 180) -
-      panel.height / 2 * math.cos(panel.tiltDegrees * math.pi / 180);
+      Solar3dPanelHeight.lowerEdgeOf(panel);
 
   bool _panelCrossesTerrain(Solar3dObject panel) =>
       panel.kind == Solar3dObjectKind.panel &&
@@ -483,7 +482,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     }
     if (panels.any(_panelCrossesTerrain)) {
       _notice('Uma ou mais placas atravessam o terreno. Ajuste a altura '
-          'do centro ou a inclinação antes de calcular perdas mensais.');
+          'da borda inferior antes de calcular perdas mensais.');
       return;
     }
     final groups = <String, List<Solar3dObject>>{};
@@ -968,7 +967,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     if (current == null) return;
     final eastCtrl = TextEditingController(text: current.center.x.toStringAsFixed(3));
     final northCtrl = TextEditingController(text: current.center.z.toStringAsFixed(3));
-    final heightCtrl = TextEditingController(text: current.center.y.toStringAsFixed(3));
+    final heightCtrl = TextEditingController(
+      text: (current.kind == Solar3dObjectKind.panel
+          ? Solar3dPanelHeight.lowerEdgeOf(current)
+          : current.center.y).toStringAsFixed(3),
+    );
     final accepted = await showDialog<bool>(context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Posicionar objeto (metros)'),
@@ -981,7 +984,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               decoration: const InputDecoration(labelText: 'Z · Norte (+) / Sul (−)'),
               keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
             TextField(controller: heightCtrl,
-              decoration: const InputDecoration(labelText: 'Y · Altura do centro do módulo ao solo'),
+              decoration: InputDecoration(
+                labelText: current.kind == Solar3dObjectKind.panel
+                    ? 'Altura da borda inferior ao solo (m)'
+                    : 'Y · altura do centro do obstáculo (m)',
+              ),
               keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
           ],
         )),
@@ -1005,7 +1012,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       _notice('Coordenadas inválidas: X/Z ±500 m e altura Y de 0 a 500 m.');
       return;
     }
-    _replace(current.copyWith(center: Solar3dVector(x, y, z)));
+    final translated = current.copyWith(center: Solar3dVector(
+      x, current.center.y, z,
+    ));
+    _replace(current.kind == Solar3dObjectKind.panel
+        ? Solar3dPanelHeight.withLowerEdge(translated, y)
+        : translated.copyWith(center: Solar3dVector(x, y, z)));
   }
 
   void _reframe() {
@@ -1115,7 +1127,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         }),
         const SizedBox(height: 8),
         const Text('N / S / L / O: bússola geográfica, acompanha a câmera. '
-            'X: Leste/Oeste · Z: Norte/Sul · Y: distância do centro ao solo.'),
+            'X: Leste/Oeste · Z: Norte/Sul · '
+            'altura da placa: borda inferior ao solo.'),
         const Text('Toque em uma placa para mover; arraste no fundo para '
             'girar a câmera. Faça pinça com dois dedos para zoom e giro; '
             'no computador, use a roda do mouse para zoom.'),
@@ -1196,10 +1209,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             padding: const EdgeInsets.all(12),
             child: Text('Geometria inconsistente: '
               '${terrainCrossingPanels.length} placa(s) atravessam o '
-              'plano do terreno devido à altura central e inclinação. '
-              'A posição do Sol está correta, mas os resultados de '
-              'sombreamento dessas placas não são confiáveis. '
-              'Ajuste a altura antes do cálculo mensal.'),
+              'plano do terreno. A posição do Sol está correta, '
+              'mas os resultados dessas placas não são confiáveis. '
+              'Edite a altura da borda inferior ao solo '
+              '(0 m significa encostada no terreno).'),
           )),
         if (current != null && current.kind == Solar3dObjectKind.panel) ...[
           Text('Placa ${current.id}: '
@@ -1276,24 +1289,35 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           const SizedBox(height: 9),
           Text('Selecionado: ${current.id}',style: Theme.of(context).textTheme.titleMedium),
           Text('Posição (m): Leste ${current.center.x.toStringAsFixed(2)}, '
-              'altura ${current.center.y.toStringAsFixed(2)}, '
+              '${current.kind == Solar3dObjectKind.panel
+                  ? "borda inferior" : "centro"} '
+              '${(current.kind == Solar3dObjectKind.panel
+                  ? Solar3dPanelHeight.lowerEdgeOf(current)
+                  : current.center.y).toStringAsFixed(2)}, '
               'Norte ${current.center.z.toStringAsFixed(2)}'),
           if (current.kind == Solar3dObjectKind.panel) ...[
-            Text('Altura do CENTRO da placa ao solo: '
-                '${current.center.y.toStringAsFixed(3)} m'
+            Text('Altura da BORDA INFERIOR ao solo: '
+                '${Solar3dPanelHeight.lowerEdgeOf(current).toStringAsFixed(3)} m'
                 ' · Cadastro: '
-                '${_registeredCenterHeight(current.id)?.toStringAsFixed(3) ?? "?"} m'),
-            if (_registeredCenterHeight(current.id) != null &&
-                (current.center.y -
-                  _registeredCenterHeight(current.id)!).abs() > .0001)
+                '${_registeredLowerEdgeHeight(current.id)?.toStringAsFixed(3) ?? "?"} m'),
+            if (_registeredLowerEdgeHeight(current.id) != null &&
+                (Solar3dPanelHeight.lowerEdgeOf(current) -
+                  _registeredLowerEdgeHeight(current.id)!).abs() > .0001)
               OutlinedButton.icon(
                 onPressed: _restoreRegisteredHeight,
                 icon: const Icon(Icons.height_outlined),
-                label: const Text('Usar altura do centro cadastrada'),
+                label: const Text('Usar altura da borda inferior cadastrada'),
               ),
-            if (_panelCrossesTerrain(current))
-              const Text('Atenção: parte da placa pode atravessar o '
-                  'plano do terreno. Confira altura e inclinação.'),
+            if (_panelCrossesTerrain(current)) ...[
+              const Text('Atenção: a borda inferior está abaixo do solo. '
+                  'Edite a altura informando a borda, não o centro.'),
+              OutlinedButton.icon(
+                onPressed: () => _replace(
+                  Solar3dPanelHeight.withLowerEdge(current, 0)),
+                icon: const Icon(Icons.vertical_align_bottom),
+                label: const Text('Elevar borda inferior a 0 m'),
+              ),
+            ],
           ],
           OutlinedButton.icon(
             onPressed: _editPosition,
@@ -1311,7 +1335,13 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             Slider(
               value: current.tiltDegrees,
               min: 0, max: 90,
-              onChanged: (v) => _replace(current.copyWith(tiltDegrees: v)),
+              onChanged: (v) => _replace(
+                Solar3dPanelHeight.withLowerEdge(
+                  current,
+                  math.max(0, Solar3dPanelHeight.lowerEdgeOf(current)),
+                  tiltDegrees: v,
+                ),
+              ),
             ),
           ] else ...[
             Text('Largura: ${current.width.toStringAsFixed(2)} m'),
