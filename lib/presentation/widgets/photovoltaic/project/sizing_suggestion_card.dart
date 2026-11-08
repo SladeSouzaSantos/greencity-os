@@ -83,6 +83,34 @@ class SizingSuggestionCard extends StatelessWidget {
                 style: TextStyle(fontSize: 11),
               ),
               ExpansionTile(
+                title: const Text('Etapas de perdas: óptica / DC / AC',
+                    style: TextStyle(fontSize: 12)),
+                children: const [
+                  ListTile(
+                    dense: true,
+                    title: Text('Óptica · implementada'),
+                    subtitle: Text('POA horário e HSP sombreado por placa, '
+                        'ponderados nos MPPTs do cenário de estudo. '
+                        'Aplicada uma única vez à geração estimada.'),
+                  ),
+                  ListTile(
+                    dense: true,
+                    title: Text('DC · auditoria preliminar, sem yield calibrado'),
+                    subtitle: Text('Strings, Voc/Vmp, Impp/Isc e limites '
+                        'de MPPT podem ser inspecionados no laboratório. '
+                        'Mismatch/bypass I-V ainda não são descontados.'),
+                  ),
+                  ListTile(
+                    dense: true,
+                    title: Text('AC · eficiência existente, clipping pendente'),
+                    subtitle: Text('O método original já aplica a eficiência '
+                        'cadastrada do inversor; não repetimos este fator. '
+                        'Clipping horário e curva de eficiência precisam '
+                        'de validação elétrica.'),
+                  ),
+                ],
+              ),
+              ExpansionTile(
                 title: const Text('Comparar os 12 meses · sem/com sombra 3D',
                   style: TextStyle(fontSize: 12)),
                 children: [

@@ -789,7 +789,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             'sob sombras parciais. Não representa geração AC '
             'validada e ainda não é salva como projeto homologado. '
             'Os obstáculos da API HSP convencional precisam estar '
-            'desativados para evitar dupla contagem.\\n\\n'
+            'desativados para evitar dupla contagem.\n\n'
             'Auditoria elétrica preliminar: '
             '${audit.topologyComplete ? "strings atribuídas" :
                 "strings incompletas"}; '
