@@ -6,8 +6,11 @@ import '../../domain/solar3d/solar3d_scene_document.dart';
 /// Explicit save/load; does not mutate the production SolarProject models.
 class Solar3dSceneStorage {
   final String projectKey;
+  /// Test override for deterministic storage isolation; production uses
+  /// getApplicationSupportDirectory() without any injected path.
+  final Directory? rootDirectory;
 
-  const Solar3dSceneStorage(this.projectKey);
+  const Solar3dSceneStorage(this.projectKey, {this.rootDirectory});
 
   String get _hash {
     // Stable 32-bit FNV-1a, used only as a path key; not cryptographic.
@@ -19,7 +22,7 @@ class Solar3dSceneStorage {
   }
 
   Future<File> _file() async {
-    final directory = await getApplicationSupportDirectory();
+    final directory = rootDirectory ?? await getApplicationSupportDirectory();
     final folder = Directory('${directory.path}${Platform.pathSeparator}solar3d');
     if (!await folder.exists()) await folder.create(recursive: true);
     return File('${folder.path}${Platform.pathSeparator}scene-$_hash.json');
