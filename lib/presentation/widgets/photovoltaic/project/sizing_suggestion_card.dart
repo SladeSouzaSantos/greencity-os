@@ -27,7 +27,8 @@ class SizingSuggestionCard extends StatelessWidget {
     final double percent = target > 0 ? (current / target).clamp(0.0, 1.0) : 0.0;
     final optical = project.hasAppliedOpticalCorrection;
     final baseline = project.baselineAverageAnnualGeneration;
-    final saved = baseline - current;
+    final delta = current - baseline;
+    final deltaLabel = '${delta >= 0 ? "+" : "−"}${delta.abs()}';
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 10),
@@ -67,7 +68,7 @@ class SizingSuggestionCard extends StatelessWidget {
                 child: Text(
                   'Sem sombra 3D: $baseline kWh/mês · '
                   'Com correção óptica: $current kWh/mês · '
-                  'Diferença: −$saved kWh/mês',
+                  'Variação: $deltaLabel kWh/mês',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
@@ -75,7 +76,10 @@ class SizingSuggestionCard extends StatelessWidget {
               const Text(
                 'Estimativa óptica experimental. As perdas de geração '
                 'elétricas por strings, bypass e rastreamento MPPT '
-                'ainda não foram validadas. O ajuste é desta sessão.',
+                'ainda não foram validadas. Reatribuir placas a MPPTs '
+                'no 3D pode mudar também a distribuição do HSP-base, '
+                'e não apenas a parcela sombreada. '
+                'O ajuste é desta sessão.',
                 style: TextStyle(fontSize: 11),
               ),
               ExpansionTile(
@@ -98,8 +102,11 @@ class SizingSuggestionCard extends StatelessWidget {
                           DataCell(Text(
                             '${project.totalMonthlyGeneration[m]}')),
                           DataCell(Text(
-                            '−${project.baselineMonthlyGeneration[m] -
-                               project.totalMonthlyGeneration[m]} kWh')),
+                            '${project.totalMonthlyGeneration[m] -
+                                   project.baselineMonthlyGeneration[m] >= 0
+                                ? "+" : "−"}'
+                            '${(project.totalMonthlyGeneration[m] -
+                                   project.baselineMonthlyGeneration[m]).abs()} kWh')),
                         ]),
                     ]),
                   ),
