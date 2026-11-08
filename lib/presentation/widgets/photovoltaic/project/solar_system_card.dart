@@ -58,6 +58,44 @@ class SolarSystemCard extends StatelessWidget {
           else
             ...system.arrays.map((array) => _buildArrayTile(array)),
 
+          // The original SolarArray MPPT remains the registered
+          // connection. In the 3D study, each physical panel may have its
+          // own hypothetical MPPT of THIS inverter.
+          if (opticalCorrection?.groupsBySystemMppt[system.id] != null) ...[
+            const Divider(),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: Text('Distribuição óptica experimental 3D',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            for (final entry in (opticalCorrection!
+                .groupsBySystemMppt[system.id]!.entries.toList()
+                  ..sort((a, b) => a.key.compareTo(b.key))))
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'MPPT ${entry.key} · '
+                    '${entry.value.moduleCount} placa(s) · '
+                    '${(entry.value.powerWp / 1000).toStringAsFixed(3)} kWp · '
+                    'HSP óptico médio: '
+                    '${(List<double>.generate(12, (m) =>
+                      entry.value.baselineMonthlyHsp[m] *
+                        entry.value.retentionMonthly[m])
+                        .reduce((a, b) => a + b) / 12).toStringAsFixed(2)}',
+                  ),
+                ),
+              ),
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('O MPPT alterado no 3D vale apenas para '
+                'a estimativa óptica; a configuração elétrica '
+                'original não foi modificada. Verifique strings, '
+                'tensão e corrente antes de instalar.'),
+            ),
+          ],
+
           // Botão de Ação
           Padding(
             padding: const EdgeInsets.all(8.0),
@@ -100,25 +138,6 @@ class SolarSystemCard extends StatelessWidget {
 
     double hspIndividual = array.solarScenarioResult?.averageHspReal ?? 0.0;
     double hspEfetivo = system.getEffectiveHspForArray(array);
-    final retention = opticalCorrection
-        ?.retentionBySystemMppt[system.id]?[array.mpptIndex];
-    double? hspOptical;
-    if (retention != null && retention.length == 12) {
-      final mpptArrays = system.arrays.where((a) =>
-        a.mpptIndex == array.mpptIndex &&
-        a.solarScenarioResult?.monthlyHspReal.length == 12).toList();
-      if (mpptArrays.isNotEmpty) {
-        var corrected = 0.0;
-        for (var month = 0; month < 12; month++) {
-          final minHsp = mpptArrays
-              .map((a) => a.solarScenarioResult!.monthlyHspReal[month])
-              .reduce((a, b) => a < b ? a : b);
-          corrected += minHsp * retention[month];
-        }
-        hspOptical = corrected / 12;
-      }
-    }
-
     // Cálculo de "perda por incompatibilidade" (mismatch)
     double mismatchLoss = hspIndividual > 0 
         ? (1 - (hspEfetivo / hspIndividual)) * 100 
@@ -176,21 +195,6 @@ class SolarSystemCard extends StatelessWidget {
               style: const TextStyle(fontSize: 11,
                   fontWeight: FontWeight.bold, color: Colors.redAccent),
             ),
-            if (hspOptical != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'HSP efetivo MPPT após correção óptica 3D: '
-                '${hspOptical.toStringAsFixed(2)} kWh/m²/dia (estimado)',
-                style: const TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.bold,
-                  color: Colors.deepOrange),
-              ),
-              const Text(
-                'É um ajuste óptico do MPPT; a perda elétrica por '
-                'sombra parcial não está modelada.',
-                style: TextStyle(fontSize: 10),
-              ),
-            ],
             if (mismatchLoss > 1) 
             Padding(
               padding: const EdgeInsets.only(top: 4),

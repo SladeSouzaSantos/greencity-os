@@ -13,11 +13,13 @@ import 'solar3d_plan_factory.dart';
 /// Provisional MPPT grouping of PHYSICAL MODULES in the 3D study.
 /// This does not certify string wiring, minimum start-up voltages or bypass.
 class Solar3dMpptOpticalGroup {
+  final int moduleCount;
   final double powerWp;
   final List<double> baselineMonthlyHsp;
   final List<double> retentionMonthly;
 
   const Solar3dMpptOpticalGroup({
+    required this.moduleCount,
     required this.powerWp,
     required this.baselineMonthlyHsp,
     required this.retentionMonthly,
@@ -184,6 +186,7 @@ class Solar3dOpticalCorrection {
     final sums = <String, Map<int, List<double>>>{};
     final denominators = <String, Map<int, List<double>>>{};
     final powers = <String, Map<int, double>>{};
+    final moduleCounts = <String, Map<int, int>>{};
     final baseHsp = <String, Map<int, List<double>>>{};
     for (var month = 1; month <= 12; month++) {
       final rows = monthly[month]!;
@@ -205,6 +208,8 @@ class Solar3dOpticalCorrection {
         if (month == 1) {
           powers.putIfAbsent(sys, () => {})[mppt] =
               (powers[sys]?[mppt] ?? 0) + data.powerWp;
+          moduleCounts.putIfAbsent(sys, () => {})[mppt] =
+              (moduleCounts[sys]?[mppt] ?? 0) + 1;
           baseHsp.putIfAbsent(sys, () => {})
               .putIfAbsent(mppt, () => List<double>.filled(12, double.infinity));
         }
@@ -244,6 +249,7 @@ class Solar3dOpticalCorrection {
       projectedGroups[group.key] = Map.unmodifiable({
         for (final entry in mpptRatios.entries)
           entry.key: Solar3dMpptOpticalGroup(
+            moduleCount: moduleCounts[group.key]![entry.key]!,
             powerWp: powers[group.key]![entry.key]!,
             baselineMonthlyHsp: List.unmodifiable(
               baseHsp[group.key]![entry.key]!),
