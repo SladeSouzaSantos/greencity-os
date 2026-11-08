@@ -7,6 +7,10 @@ import 'package:flutter/material.dart';
 
 import '../../../data/datasources/solar_resource_hourly_data_source.dart';
 import '../../../data/datasources/solar3d_scene_storage.dart';
+import '../../../data/datasources/solar3d_electrical_calibration_storage.dart';
+import '../../../domain/entities/pv_module.dart';
+import '../../../domain/solar3d/electrical/solar3d_single_diode.dart';
+import '../../widgets/photovoltaic/solar3d_calibration_dialog.dart';
 import '../../../domain/entities/solar_project.dart';
 import '../../../domain/entities/solar_system.dart';
 import '../../../domain/solar3d/solar3d_geometric_shading.dart';
@@ -139,6 +143,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   (int, String?, DateTime, int, int)? _previewShadeKey;
   Map<String, Solar3dPanelShadeInspection?> _previewShadeCache = {};
   Solar3dElectricalAudit? electricalAudit;
+  final Solar3dElectricalCalibrationStorage _electricalCatalog =
+      const Solar3dElectricalCalibrationStorage();
+  Map<String, Solar3dDiodeCalibration> _electricalModels = {};
+  String? _electricalModelError;
   String? lastCalculatedHourlyEndpoint;
   static const String hourlyUrl = String.fromEnvironment(
     'HSP_HOURLY_URL',
@@ -162,6 +170,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       storage = Solar3dSceneStorage.forProject(
           widget.project, widget.systems);
       _loadSaved();
+      unawaited(_loadElectricalModels());
     } on FormatException catch (err) {
       initError = err.message;
     }
@@ -954,6 +963,126 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     } on FormatException catch (error) {
       _notice(error.message);
     }
+  }
+
+  Map<String, PvModule> get _electricalModuleModels {
+    final result = <String, PvModule>{};
+    for (final system in widget.systems) {
+      for (final array in system.arrays) {
+        final module = array.solarScenario.module;
+        result[Solar3dElectricalCalibrationStorage.identity(module)] = module;
+      }
+    }
+    return result;
+  }
+
+  Future<void> _loadElectricalModels() async {
+    final loaded = <String, Solar3dDiodeCalibration>{};
+    try {
+      for (final entry in _electricalModuleModels.entries) {
+        final model = await _electricalCatalog.load(entry.value);
+        if (model != null) loaded[entry.key] = model;
+      }
+      if (!mounted) return;
+      setState(() {
+        _electricalModels = loaded;
+        _electricalModelError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _electricalModelError = error.toString());
+    }
+  }
+
+  Future<void> _editElectricalModel(PvModule module) async {
+    final key = Solar3dElectricalCalibrationStorage.identity(module);
+    final answer = await showDialog<Solar3dDiodeCalibration>(
+      context: context,
+      builder: (_) => Solar3dCalibrationDialog(
+        moduleModel: Solar3dElectricalCalibrationStorage.modelLabel(module),
+        existing: _electricalModels[key],
+      ),
+    );
+    if (!mounted || answer == null) return;
+    try {
+      // A calibrated model is a separate laboratory record. Never let
+      // it change the approved optical project generation implicitly.
+      await _electricalCatalog.save(module, answer);
+      await _loadElectricalModels();
+    } catch (error) {
+      if (mounted) _notice('Não foi possível salvar parâmetros: $error');
+    }
+  }
+
+  Widget _electricalModelPanel() {
+    final catalog = _electricalModuleModels;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('Fase 2 · curvas I–V/P–V do circuito elétrico',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 7),
+        const Text('Modelo elétrico isolado da estimativa HSP. '
+            'Para curvas físicas, forneça os cinco parâmetros do '
+            'modelo de diodo e a proveniência exata do fabricante/'
+            'ensaio. Os dados STC do catálogo, sozinhos, são '
+            'insuficientes. Nenhum resultado DC/AC experimental '
+            'será aplicado automaticamente à geração.'),
+        if (_electricalModelError != null)
+          Text(_electricalModelError!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        for (final entry in catalog.entries)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(Solar3dElectricalCalibrationStorage.modelLabel(
+                      entry.value),
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                  if (_electricalModels[entry.key] == null)
+                    const Text('Pendente: parâmetros I–V com origem '
+                        'rastreável. Não disponível para simulação '
+                        'elétrica calibrada.')
+                  else ...[
+                    Text('Fonte: ${_electricalModels[entry.key]!.source}'),
+                    Builder(builder: (context) {
+                      final model = _electricalModels[entry.key]!;
+                      final stc = model.at(1000, 25)
+                          .maximumPowerPoint(steps: 128);
+                      final error = entry.value.powerWp > 0
+                          ? 100 * (stc.powerW - entry.value.powerWp) /
+                              entry.value.powerWp : 0.0;
+                      return Text(
+                        'Pmp I–V em STC: '
+                        '${stc.powerW.toStringAsFixed(1)} W '
+                        '(catálogo: ${entry.value.powerWp} Wp, '
+                        'diferença ${error.toStringAsFixed(1)}%). '
+                        'Ajuste numérico ainda não validado por curva '
+                        'medida/PVsyst.',
+                      );
+                    }),
+                  ],
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: busy ? null :
+                        () => _editElectricalModel(entry.value),
+                    icon: const Icon(Icons.tune),
+                    label: Text(_electricalModels.containsKey(entry.key)
+                        ? 'Revisar parâmetros I–V'
+                        : 'Informar parâmetros I–V'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        const Text('Importar parâmetros não equivale a homologar '
+            'substrings/bypass ou eficiência do inversor. F2.2 e F2.3 '
+            'permanecem experimentais até calibração completa, '
+            'dados horários e comparações externas.'),
+      ],
+    );
   }
 
   Widget _electricalAuditPanel() {
@@ -1911,6 +2040,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         Solar3dCollapsibleSection(
           title: 'Auditoria elétrica preliminar',
           children: [_electricalAuditPanel()],
+        ),
+        Solar3dCollapsibleSection(
+          title: 'Fase 2 · Motor elétrico experimental',
+          children: [_electricalModelPanel()],
         ),
         Solar3dCollapsibleSection(
           title: 'Calcular perdas ópticas · 12 meses',
