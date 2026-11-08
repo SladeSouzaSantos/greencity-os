@@ -304,6 +304,80 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     return null;
   }
 
+  Map<String, double> _legacyHeightCandidates(Solar3dScene scene) {
+    final base = catalogInitialScene;
+    if (base == null) return {};
+    final registered = {
+      for (final o in base.objects.where(
+          (o) => o.kind == Solar3dObjectKind.panel))
+        o.id: o,
+    };
+    final candidates = <String, double>{};
+    for (final panel in scene.objects.where(
+        (o) => o.kind == Solar3dObjectKind.panel)) {
+      final original = registered[panel.id];
+      // Only scenes built with the OLD centre-height convention whose
+      // baseline edge is actually below ground qualify for opt-in repair.
+      if (original == null ||
+          Solar3dPanelHeight.lowerEdgeOf(original) >= -1e-4 ||
+          !_panelCrossesTerrain(panel) ||
+          !original.center.y.isFinite ||
+          original.center.y < 0 || original.center.y > 500) {
+        continue;
+      }
+      candidates[panel.id] = original.center.y;
+    }
+    return candidates;
+  }
+
+  Future<void> _repairLegacyHeights() async {
+    if (busy || document == null) return;
+    final doc = document!;
+    final revision = sceneRevision;
+    final candidates = _legacyHeightCandidates(doc.scene);
+    if (candidates.isEmpty) {
+      _notice('Não há alturas legadas incompatíveis para corrigir.');
+      return;
+    }
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Adaptar alturas antigas?'),
+        content: Text(
+          'O cadastro antigo considerava a altura do CENTRO, '
+          'o que colocou ${candidates.length} placa(s) parcialmente '
+          'abaixo do solo no estudo 3D.\\n\\n'
+          'Com sua confirmação, o mesmo número em metros '
+          'será interpretado como a altura da BORDA INFERIOR '
+          'para essas placas. As posições X/Z, MPPTs, strings '
+          'e demais objetos serão preservados. '
+          'O cálculo óptico mensal anterior será invalidado.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Corrigir alturas')),
+        ],
+      ),
+    );
+    if (!mounted || accepted != true || revision != sceneRevision) return;
+    final adjusted = Solar3dScene([
+      for (final o in doc.scene.objects)
+        if (candidates.containsKey(o.id))
+          Solar3dPanelHeight.withLowerEdge(o, candidates[o.id]!)
+        else
+          o,
+    ]);
+    _changeDocument(Solar3dSceneDocument(
+      scene: adjusted,
+      hiddenIds: doc.hiddenIds,
+      excludedIds: doc.excludedIds,
+    ));
+    _notice('Alturas legadas adaptadas. Salve a cena e '
+        'recalcule os 12 meses para atualizar a geração.');
+  }
+
   void _restoreRegisteredHeight() {
     final panel = selected;
     if (panel == null || panel.kind != Solar3dObjectKind.panel) return;
@@ -1272,12 +1346,25 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         if (terrainCrossingPanels.isNotEmpty)
           Card(child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Text('Geometria inconsistente: '
-              '${terrainCrossingPanels.length} placa(s) atravessam o '
-              'plano do terreno. A posição do Sol está correta, '
-              'mas os resultados dessas placas não são confiáveis. '
-              'Edite a altura da borda inferior ao solo '
-              '(0 m significa encostada no terreno).'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Geometria inconsistente: '
+                  '${terrainCrossingPanels.length} placa(s) atravessam o '
+                  'plano do terreno. A posição do Sol está correta, '
+                  'mas os resultados dessas placas não são confiáveis. '
+                  'Edite a altura da borda inferior ao solo '
+                  '(0 m significa encostada no terreno).'),
+                if (_legacyHeightCandidates(doc.scene).isNotEmpty)
+                  OutlinedButton.icon(
+                    onPressed: busy ? null : _repairLegacyHeights,
+                    icon: const Icon(Icons.height_outlined),
+                    label: Text('Adaptar altura antiga de '
+                      '${_legacyHeightCandidates(doc.scene).length}'
+                      ' placa(s) para borda inferior'),
+                  ),
+              ],
+            ),
           )),
         if (current != null && current.kind == Solar3dObjectKind.panel) ...[
           Text('Placa ${current.id}: '
