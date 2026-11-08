@@ -1,8 +1,14 @@
 # Solar 3D no GreenCity OS — fundação de domínio
 
-Esta branch ainda **não ativa a interface 3D**; adiciona somente o
-contrato horário e o motor geométrico Dart para análise de irradiância
-por placa, preservando o cadastro Isar e a API HSP de produção.
+Esta branch contém **editor 3D Flutter funcional** com cenário local,
+posição solar, obstáculos, MPPT por placa, HSP horário e correção óptica
+experimental reversível na geração estimada. Preserva o cadastro Isar
+e a API HSP de produção. O mecanismo 3D é nativo Flutter, não um
+WebView/React Three.js; a paridade WebGL continua pendente.
+
+A partir de 08/11/2026 há auditoria **prévia** de strings/MPPT
+(`solar3d_electrical_audit.dart`) com limites do datasheet. A auditoria
+NÃO calcula perdas DC/AC por sombreamento e não certifica circuito.
 
 - `SolarResourceHour` e `HourlySolarResource` validam o retorno da nova
   `/api/recurso-solar/horario`, inclusive ano completo, UTC, horas
