@@ -365,3 +365,97 @@ Por ser uma aplicação óptica aproximada, ela NÃO calcula:
   é bloqueado para aplicação, não uma redistribuição elétrica silenciosa.
 - Verificar resultados com HSP local e comparar com PVsyst/medição,
   antes de considerar qualquer rendimento como resultado técnico final.
+
+## Isolamento de inversores, remapeamento de MPPT e reset (08/11/2026)
+
+### Dois inversores sem interferência
+
+- Cada `SolarSystem.id` identifica um **inversor diferente**.
+- Cada módulo individual usa ID `inverter_id/array_index/panel_index`.
+  Assim, `Inversor 1 / MPPT 1` e `Inversor 2 / MPPT 1` **não são
+  a mesma entrada**: a retenção óptica é guardada em
+  `groupsBySystemMppt[systemId][mpptIndex]`.
+- Os IDs de novos inversores recebem `microsecondsSinceEpoch` com
+  verificação contra colisão, evitando mistura acidental de dois
+  inversores criados muito rapidamente.
+- O cálculo óptico corrigido por MPPT é somado por inversor para
+  o total do projeto. Não existe um MPPT global do projeto.
+
+### Alterar MPPT individual de placa no 3D
+
+- Um grupo de 4 módulos adicionado no cadastro continua sendo **um
+  SolarArray original**, inicialmente no mesmo MPPT.
+- Ao selecionar cada placa no laboratório, o campo
+  **MPPT da placa — inversor N** permite atribuí-la a qualquer MPPT
+  **existente naquele mesmo inversor**. O campo mostra o nome/modelo
+  do inversor para desambiguar. Não há transferência entre inversores.
+- MPPTs existentes são definidos por `inverter.mpptCount`. Um
+  inversor com somente 1 MPPT não permite selecionar MPPT 2:
+  isso exigiria alterar o equipamento do projeto.
+- Ao recalcular os 12 meses e aplicar o cenário, a nova distribuição
+  de potência por MPPT entra no cálculo experimental de geração,
+  utilizando HSP-base das placas de cada grupo e o fator de
+  retenção da irradiância POA.
+- Não se muda automaticamente o valor de `SolarArray.mpptIndex`
+  nem a ligação elétrica real do projeto. Validar tensão de partida,
+  faixas Vmp, corrente, limite de strings e comportamento de bypass
+  continua necessário antes da instalação.
+- Na tela principal, o cartão de cada inversor exibe os MPPTs do
+  **cenário 3D** (quantidade de módulos, potência e HSP corrigido)
+  separadamente do(s) array(s) original(is).
+- Uma mudança de distribuição de MPPT pode **aumentar ou diminuir**
+  a estimativa do cenário em relação à base, independentemente da
+  sombra: a comparação mostra variação assinada, não "perda" forçada.
+
+### Reset de laboratório e cálculo original
+
+Na página **ANÁLISE 3D** use **RESETAR ANÁLISE 3D** e confirme:
+- A cena persistida `scene-<hash>.json` **apenas deste projeto**
+  é excluída; os demais projetos permanecem intactos.
+- Obstáculos 3D, posições, ocultações/exclusões, strings
+  experimentais e remapeamento de MPPT são descartados.
+- A geometria/MPPTs são reconstruídos a partir dos arrays originais.
+- Os resultados mensais ópticos são descartados.
+- O overlay de geração projetada 3D é retirado;
+  **HSP legado sem obstáculos e resultados originais permanecem**.
+
+O botão **Remover correção 3D e comparar geração original** da
+tela principal apenas retira o efeito numérico; ele NÃO descarta
+o arquivo de cena editada. Para eliminar os obstáculos e todas
+as alterações da cena, utilize o reset dentro do laboratório.
+
+### Remoção da interface legada de obstáculos no HSP
+
+A janela **Adicionar módulos a este inversor** deixou de apresentar
+`Simular Sombreamento Individual?` e seus campos de distância,
+altura, largura, azimute e direção de fileira. Agora gera um
+SolarScenario agrupado, com `obstacle == null`. Obstáculos
+permanecem como objetos editáveis no laboratório 3D e **não**
+entram na API HSP base.
+
+### Testes locais após atualizar a branch
+
+```powershell
+git switch feature/solar3d-shading-analysis
+git pull --ff-only
+flutter pub get
+flutter analyze
+flutter test
+flutter run -d windows
+```
+
+Crie dois inversores, ambos com MPPT 1 e um deles com MPPT 2.
+Adicione 4 placas ao primeiro como um grupo e mais placas ao segundo;
+atribua no 3D somente UMA das quatro placas ao MPPT 2 do
+primeiro inversor. Calcule o ano completo pelo endpoint horário
+HSP local, clique em **APLICAR CORREÇÃO ÓPTICA NA GERAÇÃO** e
+confirme a nova contagem por MPPT no respectivo inversor. O MPPT 1
+do segundo inversor deve permanecer independente. Volte à cena,
+clique **RESETAR ANÁLISE 3D**, e confira o retorno ao layout original.
+Abra o modal de adição de placas: não deverá existir formulário
+de obstáculos.
+
+**Nota de engenharia:** o novo cenário altera somente o estudo
+óptico, não é um circuito validado, um string design nem uma
+estimativa AC confiável. Os testes automatizados não substituem
+homologação visual e comparação com medições/PVsyst.
