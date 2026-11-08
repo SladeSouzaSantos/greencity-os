@@ -8,9 +8,12 @@ class SolarResourceHourlyDataSource {
   final Dio dio;
   final String endpoint;
 
+  static const String publicEndpoint =
+      'https://hsp.greencity.net.br/api/recurso-solar/horario';
+
   const SolarResourceHourlyDataSource({
     required this.dio,
-    this.endpoint = 'https://hsp.greencity.net.br/api/recurso-solar/horario',
+    this.endpoint = publicEndpoint,
   });
 
   Future<HourlySolarResource> getHourlyResource({

@@ -532,3 +532,41 @@ específica antes de instalar.
   coordenada armazenada; o usuário decide quando reajustar a borda.
 - A API HSP continua recebendo `distancia_centro_modulo_chao` e
   não ganha campos de obstáculo.
+
+## Revisão da interação Android e endpoint horário (08/11/2026)
+
+### Gestos dentro da área 3D
+
+O `ListView` da página deixava movimentos verticais disputarem o
+reconhecedor de escala do editor; no Android a rolagem da página podia
+interromper rotação/arrasto do objeto. A área 3D agora usa
+`Solar3dTouchSurface` com `RawGestureDetector` e
+`EagerGestureRecognizer`: o gesto iniciado dentro do canvas pertence ao
+canvas, e **a página só rola fora dele**.
+
+- **1 dedo no objeto:** seleciona e arrasta o objeto em X/Z, preservando Y.
+- **1 dedo sobre o fundo:** gira a câmera em azimute/elevação.
+- **2 dedos movidos em paralelo:** deslocam a vista (pan da câmera)
+  sem alterar posições ou conexões dos equipamentos.
+- **2 dedos em pinça:** zoom; giro relativo dos dedos: rotação.
+- Após gesto com 2 dedos, o dedo remanescente não inicia
+  acidentalmente novo arrasto/rotação até soltar todos os dedos.
+- Roda de mouse permanece como zoom no Windows.
+- `Solar3dProjection` recebe `cameraPan` apenas visual, usado tanto na
+  projeção como na inversão do arrasto. Botões de vista superior,
+  perspectiva e reenquadramento restauram o pan.
+
+Testes automatizados cobrem arrasto vertical dentro do 3D sem
+deslocar o `ListView`, pinça/pan/twist, transição multitoque→1 dedo
+sem saltos, e projeção com deslocamento da câmera.
+
+### API horária pública
+
+Em 08/11/2026, o domínio público
+`https://hsp.greencity.net.br/api/recurso-solar/horario` respondia
+**404** e o esquema OpenAPI público ainda não listava a rota.
+O HSP **DEV** já a implementa. **O caminho padrão do aplicativo estava
+correto**, mas o backend de produção precisa receber essa versão antes
+do uso no Android. A tela disponibiliza seleção explícita entre
+endpoint público HTTPS e HSP local; o domínio de produção nunca deve
+ser substituído automaticamente por `127.0.0.1` no Android.

@@ -20,6 +20,7 @@ import '../../../domain/solar3d/solar3d_electrical_audit.dart';
 import '../../../domain/solar3d/solar3d_scene_document.dart';
 import '../../../domain/solar3d/solar3d_sun_position.dart';
 import '../../widgets/photovoltaic/solar3d_scene_painter.dart';
+import '../../widgets/photovoltaic/solar3d_touch_surface.dart';
 
 /// New opt-in scene editor. The legacy HSP calculation and SolarSystem remain
 /// untouched. All MPPT/string edits here are PRELIMINARY scene metadata until
@@ -46,8 +47,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Solar3dVector? dragStartWorld;
   Solar3dProjection? dragProjection;
   Offset? lastGesturePoint;
-  double lastGestureScale = 1, lastGestureRotation = 0;
-  bool multiTouch = false;
+  // Viewport-only translation for two-finger panning. No scene geometry changes.
+  Offset cameraPan = Offset.zero;
   Timer? sunPlayback;
   DateTime previewDay = DateTime.utc(
       DateTime.now().year, DateTime.now().month, DateTime.now().day);
@@ -67,7 +68,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   String? lastCalculatedHourlyEndpoint;
   static const String hourlyUrl = String.fromEnvironment(
     'HSP_HOURLY_URL',
-    defaultValue: 'https://hsp.greencity.net.br/api/recurso-solar/horario',
+    defaultValue: SolarResourceHourlyDataSource.publicEndpoint,
   );
   static const String localHourlyUrl =
       'http://127.0.0.1:8000/recurso-solar/horario';
@@ -629,14 +630,17 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           content: SingleChildScrollView(child: Text(
             '$err\n\n'
             'Endpoint: $endpoint\n\n'
-            'A rota horária não está implantada na API HSP de produção. '
-            'Para testar no Windows, execute o HSP Simulator na branch '
-            'feature/hourly-resource-api com '
-            'python -m uvicorn api:app --host 127.0.0.1 --port 8000 '
-            'e selecione o endpoint local.\n\n'
-            'Os dois containers hsp-solar3d-lab-* executam outra API '
-            'experimental e NÃO oferecem esta rota. '
-            'A visualização das sombras 3D funciona sem o servidor.',
+            'Verifique se a URL horária escolhida está disponível, '
+            'e se o dispositivo tem acesso à rede. '
+            'O endpoint público depende de deploy e pode retornar 404 '
+            'até a versão de HSP com esta rota estar no servidor. '
+            'Para rodar localmente no Windows, use o HSP Simulator '
+            'na branch dev: python -m uvicorn api:app --host '
+            '127.0.0.1 --port 8000.\n\n'
+            'No Android, 127.0.0.1 aponta para o PRÓPRIO aparelho. '
+            'Use o endpoint público HTTPS após publicação, ou uma '
+            'URL de desenvolvimento acessível pela rede do dispositivo. '
+            'A visualização 3D funciona sem API.',
           )),
           actions: [
             TextButton(
@@ -662,7 +666,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     final scene = document!.scene;
     return Solar3dProjection(
       size: size, scene: scene, frameScene: cameraFrameScene,
-      yaw: yaw, pitch: pitch, zoom: zoom,
+      yaw: yaw, pitch: pitch, zoom: zoom, cameraPan: cameraPan,
     );
   }
 
@@ -1008,76 +1012,59 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     }
   }
 
-  void _onTapDown(TapDownDetails details, Size size) {
-    final item = _hitObject(details.localPosition, _projection(size));
-    if (item != null) setState(() => selectedId = item.id);
-  }
-
-  void _onScaleStart(ScaleStartDetails details, Size size) {
+  /// Single touch on an object selects/drags its XY-ground placement.
+  /// Touching empty background orbits the camera instead.
+  void _touchStart(Offset local, Size size) {
     _onPanEnd();
-    lastGesturePoint = details.localFocalPoint;
-    lastGestureScale = 1;
-    lastGestureRotation = 0;
-    multiTouch = details.pointerCount >= 2;
-    if (multiTouch) return;
+    lastGesturePoint = local;
     final view = _projection(size);
-    final item = _hitObject(details.localFocalPoint, view);
-    if (item == null) return; // One finger on empty background orbits.
+    final item = _hitObject(local, view);
+    if (item == null) return;
     draggingId = item.id;
     dragStartCenter = item.center;
     dragProjection = view;
-    dragStartWorld = view.pointOnHorizontalPlane(
-      details.localFocalPoint, item.center.y);
-    setState(() => selectedId = item.id);
+    dragStartWorld = view.pointOnHorizontalPlane(local, item.center.y);
+    if (selectedId != item.id) setState(() => selectedId = item.id);
   }
 
   static double _wrapYaw(double v) =>
       (v + math.pi) % (2 * math.pi) - math.pi;
 
-  void _onScaleUpdate(ScaleUpdateDetails details) {
-    if (details.pointerCount >= 2) {
-      if (!multiTouch) {
-        multiTouch = true;
-        _onPanEnd();
-        lastGestureScale = details.scale;
-        lastGestureRotation = details.rotation;
-        lastGesturePoint = details.localFocalPoint;
-        return;
-      }
-      final ratio = lastGestureScale.abs() > 1e-6
-          ? details.scale / lastGestureScale : 1.0;
-      final twist = details.rotation - lastGestureRotation;
-      lastGestureScale = details.scale;
-      lastGestureRotation = details.rotation;
-      lastGesturePoint = details.localFocalPoint;
-      setState(() {
-        if (ratio.isFinite && ratio > 0) {
-          zoom = (zoom * ratio).clamp(.45, 4.0).toDouble();
-        }
-        if (twist.isFinite) yaw = _wrapYaw(yaw + twist);
-      });
-      return;
-    }
-    if (multiTouch) return;
+  void _touchMove(Offset local) {
     if (draggingId != null) {
-      _dragTo(details.localFocalPoint);
+      _dragTo(local);
       return;
     }
-    final last = lastGesturePoint ?? details.localFocalPoint;
-    final delta = details.localFocalPoint - last;
-    lastGesturePoint = details.localFocalPoint;
+    final last = lastGesturePoint ?? local;
+    final delta = local - last;
+    lastGesturePoint = local;
     setState(() {
       yaw = _wrapYaw(yaw + delta.dx * .009);
       pitch = (pitch - delta.dy * .006).clamp(.2, math.pi / 2).toDouble();
     });
   }
 
+  void _multitouchStart() {
+    _onPanEnd(); // Never drag a panel during a camera pinch.
+    lastGesturePoint = null;
+  }
+
+  void _multitouchUpdate(
+      Offset focal, Offset pan, double ratio, double twist) {
+    if (!pan.dx.isFinite || !pan.dy.isFinite) return;
+    setState(() {
+      if (ratio.isFinite && ratio > 0) {
+        zoom = (zoom * ratio).clamp(.45, 4.0).toDouble();
+      }
+      if (twist.isFinite) yaw = _wrapYaw(yaw + twist);
+      // Pan the CAMERA, not the panels or their electrical connections.
+      cameraPan += pan;
+    });
+  }
+
   void _onScaleEnd() {
     _onPanEnd();
     lastGesturePoint = null;
-    multiTouch = false;
-    lastGestureScale = 1;
-    lastGestureRotation = 0;
   }
 
   void _dragTo(Offset localPosition) {
@@ -1177,8 +1164,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   }
 
   void _reframe() {
-    _onPanEnd();
-    setState(() => cameraFrameScene = document!.scene);
+    _onScaleEnd();
+    setState(() {
+      cameraFrameScene = document!.scene;
+      cameraPan = Offset.zero;
+    });
   }
 
    Widget _monthlyTable() {
@@ -1249,35 +1239,33 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         LayoutBuilder(builder: (context, constraints) {
           final size = Size(constraints.maxWidth, math.min(440.0,
               math.max(250.0, MediaQuery.of(context).size.height*.48)));
-          return Listener(
-            onPointerSignal: (event) {
-              if (event is PointerScrollEvent) {
-                setState(() => zoom = (zoom *
-                    math.exp(-event.scrollDelta.dy * .0015))
-                    .clamp(.45, 4.0).toDouble());
-              }
-            },
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (event) => _onTapDown(event,size),
-              onScaleStart: (event) => _onScaleStart(event,size),
-              onScaleUpdate: _onScaleUpdate,
-              onScaleEnd: (_) => _onScaleEnd(),
-              child: SizedBox(height: size.height, width: size.width,
-              child: ClipRRect(borderRadius: BorderRadius.circular(12),
+          return Solar3dTouchSurface(
+            onSingleStart: (at) => _touchStart(at, size),
+            onSingleMove: _touchMove,
+            onMultiStart: _multitouchStart,
+            onMultiUpdate: _multitouchUpdate,
+            onInteractionEnd: _onScaleEnd,
+            onMouseScroll: (dy) => setState(() {
+              zoom = (zoom * math.exp(-dy * .0015))
+                  .clamp(.45, 4.0).toDouble();
+            }),
+            child: SizedBox(
+              height: size.height, width: size.width,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
                 child: CustomPaint(size: size, painter: Solar3dScenePainter(
                   scene: doc.scene,
                   frameScene: cameraFrameScene,
                   hiddenIds: doc.hiddenIds,
                   excludedIds: doc.excludedIds,
-                  selectedId: selectedId, yaw: yaw, pitch: pitch,
-                  zoom: zoom,
+                  selectedId: selectedId,
+                  yaw: yaw, pitch: pitch, zoom: zoom,
+                  cameraPan: cameraPan,
                   sunAzimuthDegrees: sun.azimuthDegrees,
                   sunElevationDegrees: sun.elevationDegrees,
                   directShadeByPanel: previewShades,
                 )),
               ),
-            ),
             ),
           );
         }),
@@ -1286,15 +1274,19 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             'X: Leste/Oeste · Z: Norte/Sul · '
             'altura da placa: borda inferior ao solo; '
             'altura do obstáculo: base ao solo (0 m = apoiado no chão).'),
-        const Text('Toque em uma placa para mover; arraste no fundo para '
-            'girar a câmera. Faça pinça com dois dedos para zoom e giro; '
-            'no computador, use a roda do mouse para zoom.'),
+        const Text('GESTOS PRIORITÁRIOS NA ÁREA 3D: com 1 dedo, arraste '
+            'um objeto para mover no terreno ou arraste o fundo para '
+            'girar a câmera. Com 2 dedos, arraste para deslocar a vista, '
+            'faça pinça para zoom e gire os dedos para rotacionar. '
+            'A página só rola fora da área 3D. No computador, use '
+            'a roda do mouse para zoom.'),
         Wrap(spacing: 8, runSpacing: 5, children: [
           OutlinedButton.icon(
             onPressed: () => setState(() {
               _onScaleEnd();
               yaw = 0;
               pitch = math.pi / 2;
+              cameraPan = Offset.zero;
             }),
             icon: const Icon(Icons.map_outlined),
             label: const Text('Vista superior · N ↑'),
@@ -1304,6 +1296,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               _onScaleEnd();
               yaw = .6;
               pitch = .80;
+              cameraPan = Offset.zero;
             }),
             icon: const Icon(Icons.view_in_ar_outlined),
             label: const Text('Perspectiva'),
@@ -1624,10 +1617,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         const Divider(),
         Text('HSP por placa · consulta horária opcional',
             style: Theme.of(context).textTheme.titleMedium),
-        const Text('A API de produção ainda não disponibiliza esta rota '
-            'experimental. Inicie o backend HSP com '
-            'feature/hourly-resource-api para calcular perdas mensais. '
-            'A visualização de sombras acima funciona sem API.'),
+        const Text('A consulta HSP horária utiliza uma rota independente '
+            'do dimensionamento clássico. O domínio público HTTPS '
+            'precisa ter a versão com /recurso-solar/horario implantada. '
+            'Para testes offline, a cena e as sombras 3D funcionam '
+            'sem conectar à API.'),
         TextField(
           controller: hourlyEndpointController,
           decoration: const InputDecoration(
@@ -1641,15 +1635,27 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             lastCalculatedHourlyEndpoint = null;
           }),
         ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
-            onPressed: () => setState(
-              () => hourlyEndpointController.text = localHourlyUrl),
-            icon: const Icon(Icons.computer_outlined),
-            label: const Text('Usar API local Windows · porta 8000'),
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          OutlinedButton.icon(
+            onPressed: () => setState(() {
+              hourlyEndpointController.text =
+                  SolarResourceHourlyDataSource.publicEndpoint;
+              monthly = {};
+              lastCalculatedHourlyEndpoint = null;
+            }),
+            icon: const Icon(Icons.public),
+            label: const Text('Usar HSP público HTTPS'),
           ),
-        ),
+          OutlinedButton.icon(
+            onPressed: () => setState(() {
+              hourlyEndpointController.text = localHourlyUrl;
+              monthly = {};
+              lastCalculatedHourlyEndpoint = null;
+            }),
+            icon: const Icon(Icons.computer_outlined),
+            label: const Text('Usar HSP local Windows'),
+          ),
+        ]),
         Wrap(spacing: 14, children: [
           DropdownButton<int>(value: year, items: [
             for (final y in [2022,2023,2024])

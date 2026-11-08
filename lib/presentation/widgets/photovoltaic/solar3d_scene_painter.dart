@@ -12,13 +12,15 @@ class Solar3dProjection {
   final double yaw;
   final double pitch;
   final double zoom;
+  final Offset cameraPan;
 
   late final Solar3dVector origin;
   late final double scale;
 
   Solar3dProjection({
     required this.size, required this.scene, this.frameScene,
-    required this.yaw, required this.pitch, required this.zoom,
+    required this.y, required this.pitch, required this.zoom,
+    this.cameraPan = Offset.zero,
   }) {
     // Keep the camera frame fixed while dragging objects; otherwise
     // the scene recenters on every frame and the item appears to resist.
@@ -51,8 +53,8 @@ class Solar3dProjection {
     final forward = -x * math.sin(yaw) + z * math.cos(yaw);
     // North projects upwards and East projects right at yaw=0.
     final up = y * math.cos(pitch) + forward * math.sin(pitch);
-    return Offset(size.width / 2 + right * scale,
-        size.height / 2 - up * scale);
+    return Offset(size.width / 2 + right * scale + cameraPan.dx,
+        size.height / 2 - up * scale + cameraPan.dy);
   }
 
   /// Inverse of [project] restricted to a horizontal plane at [elevation].
@@ -63,8 +65,8 @@ class Solar3dProjection {
     if (math.sin(pitch).abs() < 1e-6) {
       throw StateError('Camera parallel to ground; cannot drag on plane');
     }
-    final right = (screen.dx - size.width / 2) / scale;
-    final up = (size.height / 2 - screen.dy) / scale;
+    final right = (screen.dx - size.width / 2 - cameraPan.dx) / scale;
+    final up = (size.height / 2 + cameraPan.dy - screen.dy) / scale;
     final forward = (up - (elevation - origin.y) * math.cos(pitch)) /
         math.sin(pitch);
     final east = right * math.cos(yaw) - forward * math.sin(yaw);
@@ -112,6 +114,7 @@ class Solar3dScenePainter extends CustomPainter {
   final Set<String> excludedIds;
   final String? selectedId;
   final double yaw, pitch, zoom;
+  final Offset cameraPan;
   final double sunAzimuthDegrees, sunElevationDegrees;
   final Map<String, double?> directShadeByPanel;
 
@@ -119,6 +122,7 @@ class Solar3dScenePainter extends CustomPainter {
     required this.scene, this.frameScene, required this.hiddenIds,
     required this.excludedIds, required this.selectedId,
     required this.yaw, required this.pitch, required this.zoom,
+    this.cameraPan = Offset.zero,
     required this.sunAzimuthDegrees, required this.sunElevationDegrees,
     required this.directShadeByPanel,
   });
@@ -131,7 +135,7 @@ class Solar3dScenePainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size, bg);
     final view = Solar3dProjection(
       size: size, scene: scene, frameScene: frameScene,
-      yaw: yaw, pitch: pitch, zoom: zoom);
+      yaw: yaw, pitch: pitch, zoom: zoom, cameraPan: cameraPan);
 
     // Ground grid with real metre spacing; visual only.
     final grid = Paint()

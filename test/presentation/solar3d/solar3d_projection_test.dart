@@ -65,6 +65,26 @@ void main() {
     expect(after.scale, before.scale);
   });
 
+  test('Pan da câmera preserva a inversão entre tela e plano horizontal', () {
+    const pan = Offset(62, -38);
+    const sample = Solar3dVector(1.5, 1.2, -3.0);
+    final shifted = Solar3dProjection(
+      scene: initial, size: const Size(600, 420),
+      yaw: .65, pitch: .8, zoom: 1.3,
+      cameraPan: pan,
+    );
+    final normal = Solar3dProjection(
+      scene: initial, size: const Size(600, 420),
+      yaw: .65, pitch: .8, zoom: 1.3,
+    );
+    expect(shifted.project(sample), normal.project(sample) + pan);
+    final recovered = shifted.pointOnHorizontalPlane(
+      shifted.project(sample), sample.y);
+    expect(recovered.x, closeTo(sample.x, 1e-9));
+    expect(recovered.y, closeTo(sample.y, 1e-9));
+    expect(recovered.z, closeTo(sample.z, 1e-9));
+  });
+
   test('Arrasto em perspectiva não altera eixo Y', () {
     final camera = Solar3dProjection(
       scene: initial, size: const Size(520,480),
