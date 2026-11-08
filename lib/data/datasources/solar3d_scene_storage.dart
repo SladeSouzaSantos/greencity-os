@@ -69,23 +69,33 @@ class Solar3dSceneStorage {
     required List<SolarSystem> systems,
   }) async {
     final file = await _correctionFile();
-    if (!await file.exists()) return null;
+    if (!await file.exists()) {
+      return null;
+    }
     try {
       final savedScene = await load();
-      if (savedScene == null) return null;
+      if (savedScene == null) {
+        return null;
+      }
       final decoded = jsonDecode(await file.readAsString());
       if (decoded is! Map || decoded['schema_version'] != 1 ||
           decoded['scene'] != savedScene.encode() ||
-          decoded['correction'] is! Map) return null;
+          decoded['correction'] is! Map) {
+        return null;
+      }
 
       // Reject a stale snapshot if current installed equipment, modules
       // or wiring differs from the equipment used during application.
       final reconciled = savedScene.reconciledWith(
           Solar3dPlanFactory.fromSystems(systems));
-      if (reconciled.encode() != savedScene.encode()) return null;
+      if (reconciled.encode() != savedScene.encode()) {
+        return null;
+      }
       final correction = Solar3dOpticalCorrection.fromJson(
           Map<String, dynamic>.from(decoded['correction'] as Map));
-      if (!correction.isValidFor(systems)) return null;
+      if (!correction.isValidFor(systems)) {
+        return null;
+      }
 
       // Each MPPT retains exactly the modules recorded in the saved
       // scene; MPPT 1 of two inverters is NOT a shared tracker.
@@ -94,9 +104,13 @@ class Solar3dSceneStorage {
         if (panel.kind != Solar3dObjectKind.panel) continue;
         final matching = systems.where(
             (sys) => panel.id.startsWith('${sys.id}/')).toList();
-        if (matching.length != 1 || panel.mpptIndex == null) return null;
+        if (matching.length != 1 || panel.mpptIndex == null) {
+          return null;
+        }
         final system = matching.single;
-        if (panel.mpptIndex! > system.inverter.mpptCount) return null;
+        if (panel.mpptIndex! > system.inverter.mpptCount) {
+          return null;
+        }
         final byMppt = expectedCounts.putIfAbsent(system.id, () => {});
         byMppt[panel.mpptIndex!] = (byMppt[panel.mpptIndex!] ?? 0) + 1;
       }
@@ -106,10 +120,14 @@ class Solar3dSceneStorage {
           return null;
         }
         for (final tracker in group.value.entries) {
-          if (expected[tracker.key] != tracker.value.moduleCount) return null;
+          if (expected[tracker.key] != tracker.value.moduleCount) {
+            return null;
+          }
         }
       }
-      if (expectedCounts.isNotEmpty) return null;
+      if (expectedCounts.isNotEmpty) {
+        return null;
+      }
       return correction;
     } on FormatException {
       return null;
@@ -122,7 +140,9 @@ class Solar3dSceneStorage {
 
   Future<void> clearAppliedCorrection() async {
     final file = await _correctionFile();
-    if (await file.exists()) await file.delete();
+    if (await file.exists()) {
+      await file.delete();
+    }
   }
 
   Future<void> save(Solar3dSceneDocument document) async {
