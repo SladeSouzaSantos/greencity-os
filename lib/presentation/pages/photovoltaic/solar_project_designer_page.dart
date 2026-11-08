@@ -84,7 +84,10 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
   @override
   void initState() {
     super.initState();
-    systems = widget.project.systems;
+    // SolarProject historically defaults to const []. Never alias a
+    // possibly unmodifiable list into an editable designer.
+    systems = List<SolarSystem>.of(widget.project.systems);
+    widget.project.systems = systems;
     if (systems.isNotEmpty) {
       unawaited(_restoreAppliedCorrection());
     }
@@ -214,6 +217,13 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                           inverter: selectedInverter!,
                           arrays: [],
                         ));
+                        // The project immediately owns the editable list,
+                        // including before the first HSP calculation.
+                        widget.project.systems = systems;
+                        // A changed inverter set cannot reuse a previously
+                        // applied optical generation estimate.
+                        _opticalLoadRevision++;
+                        widget.project.opticalCorrection = null;
                       });
                       Navigator.pop(context);
                     },

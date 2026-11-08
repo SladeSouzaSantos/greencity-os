@@ -194,6 +194,53 @@ void main() {
         throwsFormatException);
   });
 
+  test('Projeto novo aceita primeiro inversor sem Unsupported operation', () {
+    // Regression: the designer used to alias SolarProject.systems, whose
+    // default value was a compile-time const [] list.
+    final project = SolarProject(
+      clientName: 'Novo cliente', city: 'Natal', state: 'RN',
+      latitude: -5.8125, longitude: -35.1875,
+      monthlyConsumption: 420,
+    );
+    expect(project.systems, isEmpty);
+    final sample = systems().single;
+    final editable = List<SolarSystem>.of(project.systems);
+    editable.add(SolarSystem(
+      id: 'MI-1', name: 'Primeiro inversor',
+      inverter: sample.inverter,
+    ));
+    project.systems = editable;
+    expect(project.systems.single.id, 'MI-1');
+
+    // The default arrays list must be editable as well, so the first
+    // group of modules can be added without an identical exception.
+    project.systems.single.arrays.add(sample.arrays.first);
+    expect(project.systems.single.arrays.length, 1);
+  });
+
+  test('Modelos copiam listas imutáveis recebidas de outros fluxos', () {
+    final existing = systems().single;
+    final providedSystems = List<SolarSystem>.unmodifiable([existing]);
+    final project = SolarProject(
+      clientName: 'Outro cliente', city: 'Natal', state: 'RN',
+      latitude: -5.8, longitude: -35.1,
+      monthlyConsumption: 420,
+      systems: providedSystems,
+    );
+    project.systems.add(SolarSystem(
+      id: 'MI-2', name: 'Outro inversor', inverter: existing.inverter));
+    expect(providedSystems.length, 1);
+    expect(project.systems.length, 2);
+
+    final withArrays = SolarSystem(
+      id: 'MI-3', name: 'Arrays externos',
+      inverter: existing.inverter,
+      arrays: List<SolarArray>.unmodifiable([existing.arrays.first]),
+    );
+    withArrays.arrays.add(existing.arrays.last);
+    expect(withArrays.arrays.length, 2);
+  });
+
   test('Uma só correção óptica por MPPT, média ponderada de placas', () {
     final list = systems();
     final correction = make(list, yearResults(list));

@@ -32,9 +32,9 @@ class SolarProject {
     required this.latitude,
     required this.longitude,
     required this.monthlyConsumption,
-    this.systems = const [],
+    List<SolarSystem> systems = const [],
     this.useSafetyMargin = false,
-  });
+  }) : systems = List<SolarSystem>.of(systems);
   
   double get effectiveConsumption => 
       useSafetyMargin ? monthlyConsumption * 1.25 : monthlyConsumption;

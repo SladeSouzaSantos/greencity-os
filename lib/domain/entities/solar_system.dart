@@ -12,8 +12,8 @@ class SolarSystem {
     required this.id,
     required this.name,
     required this.inverter,
-    this.arrays = const [],
-  });
+    List<SolarArray> arrays = const [],
+  }) : arrays = List<SolarArray>.of(arrays);
   
   int calculateSystemGenerationForMonth(
     int monthIndex,
