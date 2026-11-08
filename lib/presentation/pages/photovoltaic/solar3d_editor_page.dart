@@ -1855,6 +1855,15 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         Solar3dCollapsibleSection(
           title: 'Aplicar correção óptica na geração',
           children: [
+            if (widget.project.hasAppliedOpticalCorrection)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 10),
+                child: Text('A correção óptica de 12 meses já está '
+                    'aplicada à geração deste projeto e salva neste '
+                    'dispositivo. Você pode voltar sem recalcular. '
+                    'Somente edições na cena ou no dimensionamento '
+                    'exigirão uma nova análise.'),
+              ),
             Card(child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(

@@ -16,8 +16,9 @@ class SolarProject {
   SolarClimate? climate;
   Hsp? referenceHspHorizontal;
 
-  /// Opt-in optical-only correction for the ACTIVE design session.
-  /// Not persisted as an approved engineering estimate or quoted yield.
+  /// Applied optical-only estimate. The designer restores this from a
+  /// versioned, scene-bound local cache after explicit user confirmation.
+  /// It is NOT a certified electrical yield or approved project output.
   Solar3dOpticalCorrection? opticalCorrection;
 
   bool get hasAppliedOpticalCorrection =>
