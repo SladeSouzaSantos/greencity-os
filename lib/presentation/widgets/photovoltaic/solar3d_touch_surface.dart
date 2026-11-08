@@ -1,21 +1,16 @@
-import 'dart:math' as math;
-
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-/// Takes ownership of touch pointers INSIDE the 3D canvas, ahead of a
-/// surrounding ListView/ScrollView. The rest of the screen still scrolls.
+/// The 3D canvas owns its gestures instead of allowing a parent ListView
+/// to steal a vertical drag. Touching the canvas moves OBJECTS ONLY:
+/// the camera is operated through the separate on-screen controls.
 ///
-/// Single finger: select/drag an object or orbit over empty ground.
-/// Two fingers: zoom (pinch), rotate (twist), pan (move both fingers).
-/// The first finger left after a pinch does NOT suddenly drag an object.
+/// A second finger cancels the object drag. All fingers must lift before
+/// another object can be selected, preventing accidental multitouch moves.
 class Solar3dTouchSurface extends StatefulWidget {
   final Widget child;
   final ValueChanged<Offset> onSingleStart;
   final ValueChanged<Offset> onSingleMove;
-  final VoidCallback onMultiStart;
-  final void Function(
-      Offset focal, Offset pan, double scale, double rotation) onMultiUpdate;
   final VoidCallback onInteractionEnd;
   final ValueChanged<double>? onMouseScroll;
 
@@ -24,8 +19,6 @@ class Solar3dTouchSurface extends StatefulWidget {
     required this.child,
     required this.onSingleStart,
     required this.onSingleMove,
-    required this.onMultiStart,
-    required this.onMultiUpdate,
     required this.onInteractionEnd,
     this.onMouseScroll,
   });
@@ -35,97 +28,38 @@ class Solar3dTouchSurface extends StatefulWidget {
 }
 
 class _Solar3dTouchSurfaceState extends State<Solar3dTouchSurface> {
-  final Map<int, Offset> _touches = {};
-  Offset? _previousFocal;
-  double? _previousDistance;
-  double? _previousAngle;
-  bool _hadMultiTouch = false;
-
-  (Offset, double, double) _pair() {
-    final points = _touches.values.take(2).toList();
-    final delta = points[1] - points[0];
-    return (
-      (points[0] + points[1]) / 2,
-      delta.distance,
-      math.atan2(delta.dy, delta.dx),
-    );
-  }
-
-  void _rebasePair() {
-    if (_touches.length < 2) {
-      _previousFocal = null;
-      _previousDistance = null;
-      _previousAngle = null;
-      return;
-    }
-    final (focal, distance, angle) = _pair();
-    _previousFocal = focal;
-    _previousDistance = distance;
-    _previousAngle = angle;
-  }
+  final Set<int> _pointers = {};
+  bool _canceledByMultitouch = false;
 
   void _down(PointerDownEvent event) {
-    _touches[event.pointer] = event.localPosition;
-    if (_touches.length == 1) {
-      _hadMultiTouch = false;
+    _pointers.add(event.pointer);
+    if (_pointers.length == 1) {
+      _canceledByMultitouch = false;
       widget.onSingleStart(event.localPosition);
-    } else {
-      if (_touches.length == 2) {
-        _hadMultiTouch = true;
-        widget.onMultiStart();
-      }
-      _rebasePair();
+    } else if (_pointers.length == 2) {
+      _canceledByMultitouch = true;
+      widget.onInteractionEnd();
     }
   }
 
   void _move(PointerMoveEvent event) {
-    if (!_touches.containsKey(event.pointer)) return;
-    _touches[event.pointer] = event.localPosition;
-
-    if (_touches.length >= 2) {
-      final (focal, distance, angle) = _pair();
-      final previousFocal = _previousFocal;
-      final previousDistance = _previousDistance;
-      final previousAngle = _previousAngle;
-      _rebasePair();
-      if (previousFocal == null || previousDistance == null ||
-          previousAngle == null) {
-        return;
-      }
-      final scale = previousDistance > 1e-3
-          ? distance / previousDistance : 1.0;
-      var rotation = angle - previousAngle;
-      if (rotation > math.pi) {
-        rotation -= 2 * math.pi;
-      }
-      if (rotation < -math.pi) {
-        rotation += 2 * math.pi;
-      }
-      widget.onMultiUpdate(
-        focal,
-        focal - previousFocal,
-        scale.isFinite && scale > 0 ? scale : 1.0,
-        rotation.isFinite ? rotation : 0,
-      );
-    } else if (!_hadMultiTouch) {
+    if (_pointers.length == 1 &&
+        _pointers.contains(event.pointer) && !_canceledByMultitouch) {
       widget.onSingleMove(event.localPosition);
     }
   }
 
   void _end(int pointer) {
-    if (_touches.remove(pointer) == null) return;
-    _rebasePair();
-    if (_touches.isEmpty) {
-      _hadMultiTouch = false;
-      widget.onInteractionEnd();
+    if (!_pointers.remove(pointer)) return;
+    if (_pointers.isEmpty) {
+      if (!_canceledByMultitouch) widget.onInteractionEnd();
+      _canceledByMultitouch = false;
     }
-    // With only one remaining finger, wait for all fingers to lift
-    // before allowing a fresh object drag/orbit. Prevents jumpy motions.
   }
 
   @override
   void dispose() {
-    _touches.clear();
+    _pointers.clear();
     super.dispose();
   }
 
@@ -133,8 +67,6 @@ class _Solar3dTouchSurfaceState extends State<Solar3dTouchSurface> {
   Widget build(BuildContext context) => RawGestureDetector(
     behavior: HitTestBehavior.opaque,
     gestures: {
-      // Eagerly win the arena INSIDE this canvas. Otherwise vertical drags
-      // are intermittently interpreted as the parent ListView scrolling.
       EagerGestureRecognizer:
           GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
         () => EagerGestureRecognizer(),

@@ -570,3 +570,31 @@ correto**, mas o backend de produção precisa receber essa versão antes
 do uso no Android. A tela disponibiliza seleção explícita entre
 endpoint público HTTPS e HSP local; o domínio de produção nunca deve
 ser substituído automaticamente por `127.0.0.1` no Android.
+
+## Interação mobile por controles dedicados da câmera (revisão 08/11/2026)
+
+Após retorno de uso no Android, foi abolida a concorrência entre
+arrastar objetos e girar/zoom/pan da câmera por gestos no canvas.
+
+- A **área 3D** captura um único dedo exclusivamente para selecionar
+  e mover módulos/obstáculos no plano X/Z. Soltar o dedo finaliza a
+  operação. Arrastar o fundo **não gira a câmera**; dois dedos
+  cancelam a edição ativa e não reconfiguram a câmera.
+- O seletor de objetos considera faces 3D (topo, base e laterais
+  de obstáculos), respeita `hiddenIds` e usa 18 px de tolerância.
+- **Câmera 3D dedicada:** bússola interativa N/S/L/O define o azimute
+  horizontal; setas `↑`/`↓` alteram o **pitch** (inclinação da
+  câmera), de modo que a vista continua sendo 3D e não apenas
+  rotação de imagem 2D. Botão central restaura a perspectiva.
+- **Zoom:** botões sobrepostos `+` e `−`; roda do mouse preservada
+  no Windows. As ações de câmera não movem a geometria nem alteram MPPT.
+- Durante um arrasto, reusa-se a última visualização das máscaras
+  de sombra; o raycasting volta a atualizar ao soltar o objeto.
+  Isso evita trabalho geométrico caro em cada pixel do toque no celular.
+- Testes de regressão: toque/arrasto isolado do `ListView`, cancelamento
+  ao inserir segundo dedo, botões de câmera, faces laterais dos
+  obstáculos e tolerância de toque de painéis pequenos.
+
+**Smoke manual Android:** testar módulo e lateral do obstáculo com um
+dedo, arrastar o fundo e confirmar que a vista não gira, mudar N/L/S/O,
+inclinar com ↑/↓, zoom +/−, salvar/reabrir e executar HSP.

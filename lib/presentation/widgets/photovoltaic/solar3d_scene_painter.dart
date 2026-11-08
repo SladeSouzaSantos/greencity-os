@@ -115,6 +115,7 @@ class Solar3dScenePainter extends CustomPainter {
   final String? selectedId;
   final double yaw, pitch, zoom;
   final Offset cameraPan;
+  final bool showCompass;
   final double sunAzimuthDegrees, sunElevationDegrees;
   final Map<String, double?> directShadeByPanel;
 
@@ -122,7 +123,7 @@ class Solar3dScenePainter extends CustomPainter {
     required this.scene, this.frameScene, required this.hiddenIds,
     required this.excludedIds, required this.selectedId,
     required this.yaw, required this.pitch, required this.zoom,
-    this.cameraPan = Offset.zero,
+    this.cameraPan = Offset.zero, this.showCompass = true,
     required this.sunAzimuthDegrees, required this.sunElevationDegrees,
     required this.directShadeByPanel,
   });
@@ -259,7 +260,7 @@ class Solar3dScenePainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     sunText.paint(canvas, const Offset(10,28));
-    _paintCompass(canvas, size, view);
+    if (showCompass) _paintCompass(canvas, size, view);
   }
 
   /// Project opaque 3D boxes/panels onto the real ground plane (Y=0).
@@ -408,6 +409,7 @@ class Solar3dScenePainter extends CustomPainter {
       old.excludedIds != excludedIds || old.selectedId != selectedId ||
       old.frameScene != frameScene ||
       old.yaw != yaw || old.pitch != pitch || old.zoom != zoom ||
+      old.cameraPan != cameraPan || old.showCompass != showCompass ||
       old.directShadeByPanel != directShadeByPanel ||
       old.sunAzimuthDegrees != sunAzimuthDegrees ||
       old.sunElevationDegrees != sunElevationDegrees;

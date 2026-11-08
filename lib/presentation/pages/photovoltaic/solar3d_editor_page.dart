@@ -20,6 +20,8 @@ import '../../../domain/solar3d/solar3d_scene_document.dart';
 import '../../../domain/solar3d/solar3d_sun_position.dart';
 import '../../widgets/photovoltaic/solar3d_scene_painter.dart';
 import '../../widgets/photovoltaic/solar3d_touch_surface.dart';
+import '../../widgets/photovoltaic/solar3d_camera_controls.dart';
+import '../../widgets/photovoltaic/solar3d_object_picker.dart';
 
 /// New opt-in scene editor. The legacy HSP calculation and SolarSystem remain
 /// untouched. All MPPT/string edits here are PRELIMINARY scene metadata until
@@ -45,7 +47,6 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Solar3dVector? dragStartCenter;
   Solar3dVector? dragStartWorld;
   Solar3dProjection? dragProjection;
-  Offset? lastGesturePoint;
   // Viewport-only translation for two-finger panning. No scene geometry changes.
   Offset cameraPan = Offset.zero;
   Timer? sunPlayback;
@@ -500,7 +501,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       sceneRevision, selectedId, previewDay,
       previewMinutes, projectUtcOffset,
     );
-    if (_previewShadeKey == key) return _previewShadeCache;
+    if (_previewShadeKey == key || (draggingId != null &&
+        _previewShadeKey != null)) return _previewShadeCache;
     final scene = analysisScene;
     final result = <String, Solar3dPanelShadeInspection?>{};
     if (!sun.aboveHorizon) {
@@ -685,28 +687,13 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     );
   }
 
-  /// Hit-test the face polygon first; a center-distance fallback helps
-  /// select tiny panels on touch screens. Hide does not affect physics.
-  Solar3dObject? _hitObject(Offset at, Solar3dProjection view) {
-    final doc = document!;
-    final visible = doc.scene.objects
-        .where((o) => !doc.hiddenIds.contains(o.id)).toList()
-      ..sort((a,b) => view.depth(a.center).compareTo(view.depth(b.center)));
-    for (final object in visible) {
-      final polygon = view.face(object, object.height / 2);
-      final path = Path()..addPolygon(polygon, true);
-      if (path.contains(at)) return object;
-    }
-    Solar3dObject? nearest;
-    var distance = 34.0;
-    for (final object in visible) {
-      final d = (view.project(object.center) - at).distance;
-      if (d < distance) {
-        distance = d; nearest = object;
-      }
-    }
-    return nearest;
-  }
+  /// Use the silhouette actually rendered on screen (including obstacle
+  /// side faces) and a controlled mobile tap tolerance.
+  Solar3dObject? _hitObject(Offset at, Solar3dProjection view) =>
+      Solar3dObjectPicker.pick(
+        at: at, view: view, scene: document!.scene,
+        hiddenIds: document!.hiddenIds,
+      );
 
   /// Explicitly hand the optical scenario back to the generation screen.
   /// It changes only the monthly energy-estimate overlay in this session.
@@ -1027,11 +1014,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     }
   }
 
-  /// Single touch on an object selects/drags its XY-ground placement.
-  /// Touching empty background orbits the camera instead.
+  /// Canvas gesture owns the placement of objects exclusively.
+  /// Blank canvas does not rotate/pan the camera.
   void _touchStart(Offset local, Size size) {
     _onPanEnd();
-    lastGesturePoint = local;
     final view = _projection(size);
     final item = _hitObject(local, view);
     if (item == null) return;
@@ -1046,40 +1032,44 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       (v + math.pi) % (2 * math.pi) - math.pi;
 
   void _touchMove(Offset local) {
-    if (draggingId != null) {
-      _dragTo(local);
-      return;
-    }
-    final last = lastGesturePoint ?? local;
-    final delta = local - last;
-    lastGesturePoint = local;
+    if (draggingId != null) _dragTo(local);
+  }
+
+  void _setCameraHeading(double targetYaw) {
+    _onScaleEnd();
+    setState(() => yaw = _wrapYaw(targetYaw));
+  }
+
+  void _changeCameraPitch(double delta) {
+    _onScaleEnd();
     setState(() {
-      yaw = _wrapYaw(yaw + delta.dx * .009);
-      pitch = (pitch - delta.dy * .006).clamp(.2, math.pi / 2).toDouble();
+      pitch = (pitch + delta).clamp(.25, math.pi / 2).toDouble();
     });
   }
 
-  void _multitouchStart() {
-    _onPanEnd(); // Never drag a panel during a camera pinch.
-    lastGesturePoint = null;
+  void _zoomCamera(bool zoomIn) {
+    _onScaleEnd();
+    setState(() {
+      zoom = (zoom * (zoomIn ? 1.25 : .8)).clamp(.45, 4.0).toDouble();
+    });
   }
 
-  void _multitouchUpdate(
-      Offset focal, Offset pan, double ratio, double twist) {
-    if (!pan.dx.isFinite || !pan.dy.isFinite) return;
+  void _restorePerspective() {
+    _onScaleEnd();
     setState(() {
-      if (ratio.isFinite && ratio > 0) {
-        zoom = (zoom * ratio).clamp(.45, 4.0).toDouble();
-      }
-      if (twist.isFinite) yaw = _wrapYaw(yaw + twist);
-      // Pan the CAMERA, not the panels or their electrical connections.
-      cameraPan += pan;
+      yaw = .6;
+      pitch = .80;
+      cameraPan = Offset.zero;
     });
   }
 
   void _onScaleEnd() {
+    final hadDragging = draggingId != null;
     _onPanEnd();
-    lastGesturePoint = null;
+    // Ray samples are deferred during a drag to keep the phone responsive.
+    if (hadDragging && mounted) {
+      setState(() => _previewShadeKey = null);
+    }
   }
 
   void _dragTo(Offset localPosition) {
@@ -1254,47 +1244,62 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         LayoutBuilder(builder: (context, constraints) {
           final size = Size(constraints.maxWidth, math.min(440.0,
               math.max(250.0, MediaQuery.of(context).size.height*.48)));
-          return Solar3dTouchSurface(
-            onSingleStart: (at) => _touchStart(at, size),
-            onSingleMove: _touchMove,
-            onMultiStart: _multitouchStart,
-            onMultiUpdate: _multitouchUpdate,
-            onInteractionEnd: _onScaleEnd,
-            onMouseScroll: (dy) => setState(() {
-              zoom = (zoom * math.exp(-dy * .0015))
-                  .clamp(.45, 4.0).toDouble();
-            }),
-            child: SizedBox(
-              height: size.height, width: size.width,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: CustomPaint(size: size, painter: Solar3dScenePainter(
-                  scene: doc.scene,
-                  frameScene: cameraFrameScene,
-                  hiddenIds: doc.hiddenIds,
-                  excludedIds: doc.excludedIds,
-                  selectedId: selectedId,
-                  yaw: yaw, pitch: pitch, zoom: zoom,
-                  cameraPan: cameraPan,
-                  sunAzimuthDegrees: sun.azimuthDegrees,
-                  sunElevationDegrees: sun.elevationDegrees,
-                  directShadeByPanel: previewShades,
-                )),
+          return SizedBox(
+            width: size.width, height: size.height,
+            child: Stack(children: [
+              Positioned.fill(
+                child: Solar3dTouchSurface(
+                  onSingleStart: (at) => _touchStart(at, size),
+                  onSingleMove: _touchMove,
+                  onInteractionEnd: _onScaleEnd,
+                  onMouseScroll: (dy) => setState(() {
+                    zoom = (zoom * math.exp(-dy * .0015))
+                        .clamp(.45, 4.0).toDouble();
+                  }),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: CustomPaint(
+                      size: size,
+                      painter: Solar3dScenePainter(
+                        scene: doc.scene,
+                        frameScene: cameraFrameScene,
+                        hiddenIds: doc.hiddenIds,
+                        excludedIds: doc.excludedIds,
+                        selectedId: selectedId,
+                        yaw: yaw, pitch: pitch, zoom: zoom,
+                        cameraPan: cameraPan,
+                        showCompass: false,
+                        sunAzimuthDegrees: sun.azimuthDegrees,
+                        sunElevationDegrees: sun.elevationDegrees,
+                        directShadeByPanel: previewShades,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              Positioned.fill(
+                child: Solar3dCameraControls(
+                  yaw: yaw, pitch: pitch, zoom: zoom,
+                  onHeading: _setCameraHeading,
+                  onPitchStep: _changeCameraPitch,
+                  onDefaultPerspective: _restorePerspective,
+                  onZoomIn: () => _zoomCamera(true),
+                  onZoomOut: () => _zoomCamera(false),
+                ),
+              ),
+            ]),
           );
         }),
         const SizedBox(height: 8),
-        const Text('N / S / L / O: bússola geográfica, acompanha a câmera. '
-            'X: Leste/Oeste · Z: Norte/Sul · '
-            'altura da placa: borda inferior ao solo; '
-            'altura do obstáculo: base ao solo (0 m = apoiado no chão).'),
-        const Text('GESTOS PRIORITÁRIOS NA ÁREA 3D: com 1 dedo, arraste '
-            'um objeto para mover no terreno ou arraste o fundo para '
-            'girar a câmera. Com 2 dedos, arraste para deslocar a vista, '
-            'faça pinça para zoom e gire os dedos para rotacionar. '
-            'A página só rola fora da área 3D. No computador, use '
-            'a roda do mouse para zoom.'),
+        const Text('CONTROLES DA CÂMERA 3D: toque N/S/L/O na bússola '
+            'para girar horizontalmente, ou use as setas acima/abaixo '
+            'para inclinar a câmera em 3D. + / − aproximam e afastam. '
+            'O botão central restaura a perspectiva.'),
+        const Text('A ÁREA 3D É PARA MOVER OBJETOS: toque e arraste '
+            'uma placa ou obstáculo em X/Z, mantendo sua altura. '
+            'Arrastar o fundo não gira a câmera. '
+            'Altura da placa = borda inferior; '
+            'altura do obstáculo = base (0 m = solo).'),
         Wrap(spacing: 8, runSpacing: 5, children: [
           OutlinedButton.icon(
             onPressed: () => setState(() {
