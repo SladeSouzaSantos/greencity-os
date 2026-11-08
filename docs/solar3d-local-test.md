@@ -827,3 +827,51 @@ adicionar primeiro arranjo → adicionar segundo inversor →
 abrir Análise 3D → voltar. Não deve ocorrer `Unsupported operation`.
 A troca de inversores/arranjos invalida qualquer correção óptica
 anterior incompatível, mas não interfere com o armazenamento da cena.
+
+## Seleção múltipla e deslocamento rígido de objetos (08/11/2026)
+
+### Fluxo mobile
+
+1. Na área acima do visor 3D, ative **Selecionar vários**.
+   A seleção começa com o objeto atualmente selecionado.
+2. Toque nas placas ou obstáculos **na própria cena** ou use
+   seus chips na seção **Objetos, posições e MPPTs** para
+   adicioná-los/removê-los. Todos os selecionados recebem contorno.
+   **Todos** e **Limpar** são atalhos para o conjunto.
+3. Arraste um objeto do conjunto com um dedo: todos os
+   selecionados se deslocam juntos em X (Leste/Oeste) e Z
+   (Norte/Sul). O deslocamento usa um snapshot fixo no início
+   do gesto e preserva as distâncias relativas, azimutes, alturas,
+   IDs, inversores, strings e MPPTs individuais.
+4. Use **Mover / altura** para digitar deltas X/Z e elevação
+   relativa em metros. Com **Definir a mesma altura para todos**,
+   a altura passa a ser **absoluta**: é medida pela *borda inferior*
+   de cada placa e pela *base* de cada obstáculo, nunca pelo centro.
+   Isso permite alinhar uma placa inclinada e um obstáculo
+   usando a mesma referência física ao solo.
+5. Desative **Selecionar vários** para voltar à edição individual
+   de azimute, inclinação, dimensões, MPPTs e strings. A seleção
+   múltipla é **temporária da interface**, não é um novo objeto
+   nem altera o JSON v1 ou a topologia elétrica.
+
+### Validações e persistência
+
+- Todas as transformações do conjunto são aplicadas **atomicamente**:
+  se um dos objetos sair do limite de X/Z (±500 m), a altura
+  ultrapassar 500 m, ou a base/borda ficar abaixo de 0 m,
+  nenhuma posição é confirmada.
+- O cálculo geométrico de sombras usa as posições novas e a
+  mesma função de persistência automática da cena (debounce).
+- Mover o conjunto é uma edição física real e invalida os
+  fatores ópticos previamente aplicados; a nova configuração
+  precisa de outra rodada de 12 meses antes de ser aplicada.
+- Não há cadastro de grupos permanentes: não existem alterações
+  nas conexões MPPT dos inversores quando os objetos são movidos.
+
+**Smoke Android:** marcar placas de dois inversores e um
+obstáculo; arrastar uma placa e conferir que todas mudam X/Z
+na mesma medida; digitar Δaltura +1,50 m e confirmar
+preservação dos desníveis; definir altura comum 5,50 m e
+conferir borda inferior/base de cada selecionado; tocar
+**Limpar** e conferir que nenhum objeto fica destacado;
+sair/reabrir para confirmar as posições e os MPPTs originais.
