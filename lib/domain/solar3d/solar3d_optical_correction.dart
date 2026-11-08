@@ -43,6 +43,98 @@ class Solar3dOpticalCorrection {
     required this.groupsBySystemMppt,
   });
 
+  /// Versioned local snapshot; never changes the electrical wiring.
+  Map<String, Object?> toJson() => {
+    'schema_version': 1,
+    'weather_year_utc': weatherYearUtc,
+    'design_signature': designSignature,
+    'panel_count': panelCount,
+    'groups': {
+      for (final system in groupsBySystemMppt.entries)
+        system.key: {
+          for (final mppt in system.value.entries)
+            mppt.key.toString(): {
+              'module_count': mppt.value.moduleCount,
+              'power_wp': mppt.value.powerWp,
+              'baseline_monthly_hsp': mppt.value.baselineMonthlyHsp,
+              'retention_monthly': mppt.value.retentionMonthly,
+            },
+        },
+    },
+  };
+
+  static Solar3dOpticalCorrection fromJson(Map<String, dynamic> source) {
+    final year = source['weather_year_utc'];
+    final signature = source['design_signature'];
+    final panels = source['panel_count'];
+    final groups = source['groups'];
+    if (source['schema_version'] != 1 || year is! int ||
+        year < 2000 || year > 2100 || signature is! String ||
+        signature.isEmpty || panels is! int || panels < 1 ||
+        groups is! Map || groups.isEmpty) {
+      throw const FormatException('Correção óptica persistida inválida');
+    }
+    List<double> months(Object? raw, {required bool retention}) {
+      if (raw is! List || raw.length != 12) {
+        throw const FormatException('Correção óptica sem 12 meses');
+      }
+      return List<double>.unmodifiable(raw.map((value) {
+        if (value is! num || !value.isFinite || value < 0 ||
+            (retention && value > 1)) {
+          throw const FormatException('Fator óptico mensal inválido');
+        }
+        return value.toDouble();
+      }));
+    }
+    final restoredGroups = <String, Map<int, Solar3dMpptOpticalGroup>>{};
+    final restoredRatios = <String, Map<int, List<double>>>{};
+    var totalPanels = 0;
+    for (final entry in groups.entries) {
+      if (entry.key is! String || (entry.key as String).isEmpty ||
+          entry.value is! Map || (entry.value as Map).isEmpty) {
+        throw const FormatException('Sistema óptico persistido inválido');
+      }
+      final byMppt = <int, Solar3dMpptOpticalGroup>{};
+      final ratios = <int, List<double>>{};
+      for (final tracker in (entry.value as Map).entries) {
+        if (tracker.key is! String || tracker.value is! Map) {
+          throw const FormatException('MPPT persistido inválido');
+        }
+        final index = int.tryParse(tracker.key as String);
+        final details = tracker.value as Map;
+        final count = details['module_count'];
+        final power = details['power_wp'];
+        if (index == null || index < 1 || byMppt.containsKey(index) ||
+            count is! int || count < 1 || power is! num ||
+            !power.isFinite || power <= 0) {
+          throw const FormatException('Grupo MPPT persistido inválido');
+        }
+        final baseline = months(details['baseline_monthly_hsp'],
+            retention: false);
+        final factor = months(details['retention_monthly'],
+            retention: true);
+        totalPanels += count;
+        byMppt[index] = Solar3dMpptOpticalGroup(
+          moduleCount: count, powerWp: power.toDouble(),
+          baselineMonthlyHsp: baseline, retentionMonthly: factor,
+        );
+        ratios[index] = factor;
+      }
+      restoredGroups[entry.key as String] = Map.unmodifiable(byMppt);
+      restoredRatios[entry.key as String] = Map.unmodifiable(ratios);
+    }
+    if (totalPanels != panels) {
+      throw const FormatException('Contagem de módulos ópticos inconsistente');
+    }
+    return Solar3dOpticalCorrection._(
+      weatherYearUtc: year,
+      designSignature: signature,
+      panelCount: panels,
+      retentionBySystemMppt: Map.unmodifiable(restoredRatios),
+      groupsBySystemMppt: Map.unmodifiable(restoredGroups),
+    );
+  }
+
   /// Invalidate the estimate when a module, inverter, MPPT or reference HSP
   /// changes. Layout changes within the 3D editor clear monthly results.
   static String signatureFor(List<SolarSystem> systems) => systems.map((sys) {
