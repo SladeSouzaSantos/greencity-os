@@ -70,11 +70,13 @@ void main() {
       (tester) async {
     Offset? touched;
     await tester.pumpWidget(MaterialApp(home: Scaffold(
-      body: Solar3dTouchSurface(
-        onSingleStart: (at) => touched = at,
-        onSingleMove: (_) {},
-        onInteractionEnd: () {},
-        child: const ColoredBox(color: Colors.black),
+      body: SizedBox.expand(
+        child: Solar3dTouchSurface(
+          onSingleStart: (at) => touched = at,
+          onSingleMove: (_) {},
+          onInteractionEnd: () {},
+          child: const ColoredBox(color: Colors.black),
+        ),
       ),
     )));
     await tester.tapAt(const Offset(80, 80));
