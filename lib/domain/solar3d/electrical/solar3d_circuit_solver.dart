@@ -109,8 +109,23 @@ class Solar3dPhysicalString {
   double get openCircuitVoltage =>
       modules.fold(0, (sum, m) => sum + m.openCircuitVoltage);
 
-  double get currentSearchUpperA =>
-      modules.map((m) => m.currentSearchUpperA).reduce(math.min);
+  double get currentSearchUpperA {
+    // An already-bypassed weak module is NOT a current bottleneck.
+    // Only substrings WITHOUT a bypass diode limit series current;
+    // otherwise a stronger illuminated substring may supply current
+    // through the bypassed weaker one.
+    final sourceCurrents = <double>[];
+    final withoutBypass = <double>[];
+    for (final module in modules) {
+      for (final substring in module.substrings) {
+        final isc = substring.diode.shortCircuitCurrent;
+        sourceCurrents.add(isc);
+        if (substring.bypassDropV == null) withoutBypass.add(isc);
+      }
+    }
+    if (withoutBypass.isNotEmpty) return withoutBypass.reduce(math.min);
+    return sourceCurrents.reduce(math.max) * 1.05;
+  }
 
   double? voltageAtCurrent(double current) {
     if (current < 0 || !current.isFinite) {
