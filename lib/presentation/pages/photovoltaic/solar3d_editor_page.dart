@@ -1784,10 +1784,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             label: const Text('Usar HSP local Windows'),
           ),
         ]),
-        Wrap(spacing: 14, crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            const Text('Ano meteorológico:'),
-            DropdownButton<int>(
+        const Text('Ano meteorológico:'),
+        SizedBox(
+          width: double.infinity,
+          child: DropdownButton<int>(
+              isExpanded: true,
               value: yearSelection,
               items: [
                 const DropdownMenuItem(
@@ -1808,7 +1809,6 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                 }
               },
             ),
-          ],
         ),
         const Text('O servidor HSP escolhe automaticamente o último '
             'ano civil UTC completo. Na configuração NASA POWER atual '
