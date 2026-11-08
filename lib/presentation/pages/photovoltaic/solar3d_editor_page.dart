@@ -22,6 +22,7 @@ import '../../widgets/photovoltaic/solar3d_scene_painter.dart';
 import '../../widgets/photovoltaic/solar3d_touch_surface.dart';
 import '../../widgets/photovoltaic/solar3d_camera_controls.dart';
 import '../../widgets/photovoltaic/solar3d_obstacle_numeric_dialog.dart';
+import '../../widgets/photovoltaic/solar3d_position_dialog.dart';
 import '../../widgets/photovoltaic/solar3d_object_picker.dart';
 
 /// New opt-in scene editor. The legacy HSP calculation and SolarSystem remain
@@ -483,26 +484,28 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Future<void> _setString() async {
     final current = selected;
     if (current == null || current.kind != Solar3dObjectKind.panel) return;
-    final ctrl = TextEditingController(text: current.stringId ?? '');
-    final submitted = await showDialog<String>(context: context,
-      builder: (context) => AlertDialog(
+    var value = current.stringId ?? '';
+    final submitted = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
         title: const Text('String da placa — estudo'),
-        content: TextField(
-          controller: ctrl,
+        content: TextFormField(
+          initialValue: value,
           maxLength: 40,
+          onChanged: (text) => value = text,
           decoration: const InputDecoration(
             labelText: 'ID da string (ex.: S1)',
             helperText: 'Não altera ainda o dimensionamento do inversor.',
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context),
+          TextButton(onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar')),
           FilledButton(onPressed: () => Navigator.pop(
-            context, ctrl.text.trim()), child: const Text('Aplicar')),
+            dialogContext, value.trim()), child: const Text('Aplicar')),
         ],
-      ));
-    ctrl.dispose();
+      ),
+    );
     if (!mounted || submitted == null) return;
     _replace(current.copyWith(
       stringId: submitted.isEmpty ? null : submitted,
@@ -1161,60 +1164,13 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Future<void> _editPosition() async {
     final current = selected;
     if (current == null) return;
-    final eastCtrl = TextEditingController(text: current.center.x.toStringAsFixed(3));
-    final northCtrl = TextEditingController(text: current.center.z.toStringAsFixed(3));
-    final heightCtrl = TextEditingController(
-      text: (current.kind == Solar3dObjectKind.panel
-          ? Solar3dPanelHeight.lowerEdgeOf(current)
-          : Solar3dObstacleHeight.baseOf(current)).toStringAsFixed(3),
+    final updated = await showDialog<Solar3dObject>(
+      context: context,
+      builder: (_) => Solar3dPositionDialog(object: current),
     );
-    final accepted = await showDialog<bool>(context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Posicionar objeto (metros)'),
-        content: SizedBox(width: 320, child: Column(
-          mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: eastCtrl,
-              decoration: const InputDecoration(labelText: 'X · Leste (+) / Oeste (−)'),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
-            TextField(controller: northCtrl,
-              decoration: const InputDecoration(labelText: 'Z · Norte (+) / Sul (−)'),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
-            TextField(controller: heightCtrl,
-              decoration: InputDecoration(
-                labelText: current.kind == Solar3dObjectKind.panel
-                    ? 'Altura da borda inferior ao solo (m)'
-                    : 'Y · altura da BASE ao solo (m)',
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
-          ],
-        )),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Aplicar')),
-        ],
-      ));
-    double? read(TextEditingController ctrl) => double.tryParse(
-      ctrl.text.trim().replaceAll(',', '.'));
-    final x = read(eastCtrl), z = read(northCtrl), y = read(heightCtrl);
-    eastCtrl.dispose();
-    northCtrl.dispose();
-    heightCtrl.dispose();
-    if (!mounted || accepted != true) return;
-    if (x == null || z == null || y == null ||
-        !x.isFinite || !z.isFinite || !y.isFinite ||
-        x.abs() > 500 || z.abs() > 500 || y < 0 || y > 500) {
-      _notice('Coordenadas inválidas: X/Z ±500 m e base/borda de 0 a 500 m.');
-      return;
-    }
-    final translated = current.copyWith(center: Solar3dVector(
-      x, current.center.y, z,
-    ));
+    if (!mounted || updated == null) return;
     try {
-      _replace(current.kind == Solar3dObjectKind.panel
-          ? Solar3dPanelHeight.withLowerEdge(translated, y)
-          : Solar3dObstacleHeight.withBase(translated, y));
+      _replace(updated);
     } on FormatException catch (error) {
       _notice(error.message);
     }
