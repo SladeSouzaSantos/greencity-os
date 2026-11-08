@@ -70,7 +70,6 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   bool busy = false;
   String progress = '';
   Map<int, List<PanelMonthlyIrradianceLoss>> monthly = {};
-        calculatedYearUtc = null;
   int sceneRevision = 0;
   // Cache expensive per-panel ray intersections across camera-only
   // interactions (orbit, pinch, zoom, pan). Invalidate on scene/solar
