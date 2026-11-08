@@ -954,6 +954,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
 
   Future<void> _applyOpticalToProject() async {
     if (busy) return;
+    if (calculatedYearUtc == null || monthly.length != 12) {
+      _notice('Calcule os 12 meses completos antes de aplicar.');
+      return;
+    }
     if (lastCalculatedHourlyEndpoint == null ||
         lastCalculatedHourlyEndpoint !=
             hourlyEndpointController.text.trim()) {
