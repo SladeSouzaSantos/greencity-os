@@ -64,6 +64,15 @@ class HspInputValidator {
         maximum: 360,
       );
 
+  static String? validateModuleLowerEdgeHeight(String? value) =>
+      validateNumber(
+        value,
+        label: 'Altura da borda inferior do módulo',
+        minimum: 0,
+        maximum: 500,
+      );
+
+  /// Legacy/API callers retain centre-height validation.
   static String? validateModuleCenterHeight(String? value) => validateNumber(
         value,
         label: 'Altura do centro do módulo',
@@ -156,7 +165,7 @@ class HspInputValidator {
         ) ??
         validateValue(
           scenario.distanceToGround,
-          label: 'Altura do centro do módulo',
+          label: 'Altura do centro do módulo (API HSP)',
           minimum: 0,
         ) ??
         (scenario.obstacle == null

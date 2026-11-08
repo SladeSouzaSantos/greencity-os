@@ -1,6 +1,7 @@
 import 'hsp.dart';
 import 'solar_system.dart';
 import 'solar_climate.dart';
+import '../solar3d/solar3d_optical_correction.dart';
 
 class SolarProject {
   String clientName;
@@ -15,6 +16,14 @@ class SolarProject {
   SolarClimate? climate;
   Hsp? referenceHspHorizontal;
 
+  /// Applied optical-only estimate. The designer restores this from a
+  /// versioned, scene-bound local cache after explicit user confirmation.
+  /// It is NOT a certified electrical yield or approved project output.
+  Solar3dOpticalCorrection? opticalCorrection;
+
+  bool get hasAppliedOpticalCorrection =>
+      opticalCorrection?.isValidFor(systems) ?? false;
+
   SolarProject({
     required this.clientName,
     this.document,
@@ -23,9 +32,9 @@ class SolarProject {
     required this.latitude,
     required this.longitude,
     required this.monthlyConsumption,
-    this.systems = const [],
+    List<SolarSystem> systems = const [],
     this.useSafetyMargin = false,
-  });
+  }) : systems = List<SolarSystem>.of(systems);
   
   double get effectiveConsumption => 
       useSafetyMargin ? monthlyConsumption * 1.25 : monthlyConsumption;
@@ -33,33 +42,40 @@ class SolarProject {
   double get totalProjectPowerWp => 
       systems.fold(0, (sum, sys) => sum + (sys.totalSystemPower/1000));
   
-  List<int> get totalMonthlyGeneration {
-    List<int> totals = List.filled(12, 0);
-
-    List<double>? tMaxList = climate?.tempMaxMonthly;
-    
-    for (var system in systems) {
-      for (int mes = 0; mes < 12; mes++) {
-        totals[mes] += system.calculateSystemGenerationForMonth(mes, tMaxList);
+  List<int> _monthlyGeneration({required bool applyOptical}) {
+    final totals = List<int>.filled(12, 0);
+    final tMaxList = climate?.tempMaxMonthly;
+    final applied = applyOptical && hasAppliedOpticalCorrection
+        ? opticalCorrection : null;
+    for (final system in systems) {
+      for (var month = 0; month < 12; month++) {
+        totals[month] += system.calculateSystemGenerationForMonth(
+          month,
+          tMaxList,
+          opticalRetentionByMppt:
+              applied?.retentionBySystemMppt[system.id],
+          opticalMpptGroups:
+              applied?.groupsBySystemMppt[system.id],
+        );
       }
     }
     return totals;
   }
 
-  int get totalAverageAnnualGeneration {
-    if (systems.isEmpty) return 0;
-    
-    List<double>? tMaxList = climate?.tempMaxMonthly;
+  List<int> get baselineMonthlyGeneration =>
+      _monthlyGeneration(applyOptical: false);
 
-    double totalAnual = 0.0;
-    
-    for (var system in systems) {
-      for (int mes = 0; mes < 12; mes++) {
-        totalAnual += system.calculateSystemGenerationForMonth(mes, tMaxList);
-      }
-    }
-        
-    return (totalAnual / 12).floor(); 
+  List<int> get totalMonthlyGeneration =>
+      _monthlyGeneration(applyOptical: true);
+
+  int get baselineAverageAnnualGeneration {
+    final totals = baselineMonthlyGeneration;
+    return totals.reduce((sum, value) => sum + value) ~/ 12;
+  }
+
+  int get totalAverageAnnualGeneration {
+    final totals = totalMonthlyGeneration;
+    return totals.reduce((sum, value) => sum + value) ~/ 12;
   }
   
   @override

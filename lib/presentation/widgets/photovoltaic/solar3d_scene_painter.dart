@@ -1,0 +1,545 @@
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import '../../../domain/solar3d/solar3d_geometric_shading.dart';
+
+/// A quadrilateral with 3D depth at EACH projected vertex.
+/// Picking interpolates depth under the fingertip, not only an object's
+/// centre/nearest corner; the painter uses the same six physical faces.
+class Solar3dProjectedFace {
+  final Solar3dObject object;
+  final int index; // 0: underside, 1: top/front, 2-5: four sides
+  final List<Offset> corners;
+  final List<double> depths;
+
+  const Solar3dProjectedFace({
+    required this.object,
+    required this.index,
+    required this.corners,
+    required this.depths,
+  });
+
+  double get averageDepth =>
+      depths.reduce((a, b) => a + b) / depths.length;
+
+  double? _triangleDepth(Offset point, int a, int b, int c) {
+    final origin = corners[a];
+    final u = corners[b] - origin;
+    final v = corners[c] - origin;
+    final p = point - origin;
+    final det = u.dx * v.dy - u.dy * v.dx;
+    if (det.abs() < 1e-10) return null;
+    final ub = (p.dx * v.dy - p.dy * v.dx) / det;
+    final vc = (u.dx * p.dy - u.dy * p.dx) / det;
+    if (ub < -1e-6 || vc < -1e-6 || ub + vc > 1 + 1e-6) {
+      return null;
+    }
+    return depths[a] * (1 - ub - vc) + depths[b] * ub + depths[c] * vc;
+  }
+
+  /// Orthographic camera projection keeps camera depth affine on each
+  /// triangle, so barycentric interpolation is valid for touching a face.
+  double? depthAt(Offset point) =>
+      _triangleDepth(point, 0, 1, 2) ??
+      _triangleDepth(point, 0, 2, 3);
+}
+
+/// Cross-platform volumetric scene preview (Flutter CustomPainter).
+/// 3D world: X east, Y up, Z north. No projected geometry enters physics.
+class Solar3dProjection {
+  final Size size;
+  final Solar3dScene scene;
+  final Solar3dScene? frameScene;
+  final double yaw;
+  final double pitch;
+  final double zoom;
+  final Offset cameraPan;
+
+  late final Solar3dVector origin;
+  late final double scale;
+
+  Solar3dProjection({
+    required this.size, required this.scene, this.frameScene,
+    required this.yaw, required this.pitch, required this.zoom,
+    this.cameraPan = Offset.zero,
+  }) {
+    // Keep the camera frame fixed while dragging objects; otherwise
+    // the scene recenters on every frame and the item appears to resist.
+    final objects = (frameScene ?? scene).objects;
+    final minX = objects.map((o) => o.center.x - o.width / 2)
+        .reduce(math.min);
+    final maxX = objects.map((o) => o.center.x + o.width / 2)
+        .reduce(math.max);
+    final minZ = objects.map((o) => o.center.z - o.depth / 2)
+        .reduce(math.min);
+    final maxZ = objects.map((o) => o.center.z + o.depth / 2)
+        .reduce(math.max);
+    final minY = 0.0;
+    final maxY = objects.map((o) => o.center.y + o.height / 2)
+        .reduce(math.max);
+    origin = Solar3dVector((minX + maxX) / 2,
+        (minY + maxY) / 2, (minZ + maxZ) / 2);
+    final radius = math.max(3.0,
+        math.sqrt(math.pow(maxX - minX, 2) +
+            math.pow(maxZ - minZ, 2) +
+            math.pow(maxY - minY, 2)).toDouble());
+    scale = zoom * math.min(size.width, size.height) / (radius * 1.8);
+  }
+
+  Offset project(Solar3dVector point) {
+    final x = point.x - origin.x;
+    final y = point.y - origin.y;
+    final z = point.z - origin.z;
+    final right = x * math.cos(yaw) + z * math.sin(yaw);
+    final forward = -x * math.sin(yaw) + z * math.cos(yaw);
+    // North projects upwards and East projects right at yaw=0.
+    final up = y * math.cos(pitch) + forward * math.sin(pitch);
+    return Offset(size.width / 2 + right * scale + cameraPan.dx,
+        size.height / 2 - up * scale + cameraPan.dy);
+  }
+
+  /// Inverse of [project] restricted to a horizontal plane at [elevation].
+  /// Screen dragging therefore moves East/North without changing height,
+  /// regardless of camera rotation or tilt. The view must be held fixed
+  /// for the duration of a gesture.
+  Solar3dVector pointOnHorizontalPlane(Offset screen, double elevation) {
+    if (math.sin(pitch).abs() < 1e-6) {
+      throw StateError('Camera parallel to ground; cannot drag on plane');
+    }
+    final right = (screen.dx - size.width / 2 - cameraPan.dx) / scale;
+    final up = (size.height / 2 + cameraPan.dy - screen.dy) / scale;
+    final forward = (up - (elevation - origin.y) * math.cos(pitch)) /
+        math.sin(pitch);
+    final east = right * math.cos(yaw) - forward * math.sin(yaw);
+    final north = right * math.sin(yaw) + forward * math.cos(yaw);
+    return Solar3dVector(origin.x + east, elevation, origin.z + north);
+  }
+
+  double depth(Solar3dVector point) {
+    final x = point.x - origin.x;
+    final y = point.y - origin.y;
+    final z = point.z - origin.z;
+    return (-x * math.sin(yaw) + z * math.cos(yaw)) * math.cos(pitch) +
+        y * math.sin(pitch);
+  }
+
+  /// Largest camera-facing depth among the object's rotated corners.
+  ///
+  /// Sorting by the CENTRE is incorrect for tall boxes: a 5 m obstacle
+  /// with centre Y=2.5 can obscure a panel at 4.5 m, even though its
+  /// top face Y=5 is in front of the panel. In top view, use the object
+  /// TOP (not centre); for oblique cameras, include all eight corners.
+  double frontSurfaceDepth(Solar3dObject object) {
+    var nearest = -double.infinity;
+    for (final x in [-object.width / 2, object.width / 2]) {
+      for (final y in [-object.height / 2, object.height / 2]) {
+        for (final z in [-object.depth / 2, object.depth / 2]) {
+          nearest = math.max(
+            nearest,
+            depth(transform(object, Solar3dVector(x, y, z))),
+          );
+        }
+      }
+    }
+    return nearest;
+  }
+
+  /// Far-to-near paint order: the closest face must be painted LAST.
+  /// The same ordering (reversed) is used by touch picking so that
+  /// visible objects, not occluded objects, receive the gesture.
+  List<Solar3dObject> farToNear(Iterable<Solar3dObject> objects) =>
+      objects.toList()
+        ..sort((a, b) {
+          final distance = frontSurfaceDepth(a)
+              .compareTo(frontSurfaceDepth(b));
+          return distance != 0 ? distance : a.id.compareTo(b.id);
+        });
+
+  /// Consistent with the geometry raycast basis Ry(azimuth) Rx(tilt).
+  Solar3dVector transform(Solar3dObject object, Solar3dVector point) {
+    final a = object.azimuthDegrees * math.pi / 180;
+    final b = (object.kind == Solar3dObjectKind.panel
+        ? object.tiltDegrees : 0.0) * math.pi / 180;
+    final ca = math.cos(a), sa = math.sin(a);
+    final cb = math.cos(b), sb = math.sin(b);
+    return object.center + Solar3dVector(
+      ca*point.x + sa*sb*point.y + sa*cb*point.z,
+      cb*point.y - sb*point.z,
+      -sa*point.x + ca*sb*point.y + ca*cb*point.z,
+    );
+  }
+
+  List<Offset> face(Solar3dObject object, double y) {
+    final halfX = object.width / 2, halfZ = object.depth / 2;
+    return [
+      Solar3dVector(-halfX,y,-halfZ),
+      Solar3dVector(halfX,y,-halfZ),
+      Solar3dVector(halfX,y,halfZ),
+      Solar3dVector(-halfX,y,halfZ),
+    ].map((p) => project(transform(object,p))).toList();
+  }
+
+  /// Six closed faces of an oriented volumetric object. All surfaces,
+  /// including obstacles' sides, participate in true oblique occlusion.
+  List<Solar3dProjectedFace> projectedFaces(Solar3dObject object) {
+    final hx = object.width / 2;
+    final hy = object.height / 2;
+    final hz = object.depth / 2;
+    final bottom = [
+      Solar3dVector(-hx, -hy, -hz), Solar3dVector(hx, -hy, -hz),
+      Solar3dVector(hx, -hy, hz), Solar3dVector(-hx, -hy, hz),
+    ];
+    final top = [
+      Solar3dVector(-hx, hy, -hz), Solar3dVector(hx, hy, -hz),
+      Solar3dVector(hx, hy, hz), Solar3dVector(-hx, hy, hz),
+    ];
+    final world = [...bottom, ...top].map(
+      (point) => transform(object, point),
+    ).toList();
+    final faceIndices = [
+      [0, 1, 2, 3], [4, 5, 6, 7],
+      [0, 1, 5, 4], [1, 2, 6, 5],
+      [2, 3, 7, 6], [3, 0, 4, 7],
+    ];
+    return [
+      for (var i = 0; i < faceIndices.length; i++)
+        Solar3dProjectedFace(
+          object: object, index: i,
+          corners: faceIndices[i].map((j) => project(world[j])).toList(),
+          depths: faceIndices[i].map((j) => depth(world[j])).toList(),
+        ),
+    ];
+  }
+
+  /// Face-level painter sorting is needed when a tall obstacle overlaps a
+  /// raised module in an angled view. Sorting WHOLE objects by maximum
+  /// corner depth can mistakenly paint all obstacle faces over the module.
+  List<Solar3dProjectedFace> facesFarToNear(
+      Iterable<Solar3dObject> objects) {
+    final faces = [
+      for (final object in objects) ...projectedFaces(object),
+    ];
+    faces.sort((a, b) {
+      final diff = a.averageDepth.compareTo(b.averageDepth);
+      if (diff != 0) return diff;
+      final ids = a.object.id.compareTo(b.object.id);
+      return ids != 0 ? ids : a.index.compareTo(b.index);
+    });
+    return faces;
+  }
+}
+
+class Solar3dScenePainter extends CustomPainter {
+  final Solar3dScene scene;
+  final Solar3dScene? frameScene;
+  final Set<String> hiddenIds;
+  final Set<String> excludedIds;
+  final String? selectedId;
+  final Set<String> selectedIds;
+  final bool multipleSelection;
+  final double yaw, pitch, zoom;
+  final Offset cameraPan;
+  final bool showCompass;
+  final double sunAzimuthDegrees, sunElevationDegrees;
+  final Map<String, double?> directShadeByPanel;
+
+  Solar3dScenePainter({
+    required this.scene, this.frameScene, required this.hiddenIds,
+    required this.excludedIds, required this.selectedId,
+    this.selectedIds = const {}, this.multipleSelection = false,
+    required this.yaw, required this.pitch, required this.zoom,
+    this.cameraPan = Offset.zero, this.showCompass = true,
+    required this.sunAzimuthDegrees, required this.sunElevationDegrees,
+    required this.directShadeByPanel,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final isDaylight = sunElevationDegrees > 0;
+    final bg = Paint()..color = isDaylight
+        ? const Color(0xff142a35) : const Color(0xff0b1724);
+    canvas.drawRect(Offset.zero & size, bg);
+    final view = Solar3dProjection(
+      size: size, scene: scene, frameScene: frameScene,
+      yaw: yaw, pitch: pitch, zoom: zoom, cameraPan: cameraPan);
+
+    // Ground grid with real metre spacing; visual only.
+    final grid = Paint()
+      ..color = const Color(0xff28404b)
+      ..strokeWidth = 0.7
+      ..style = PaintingStyle.stroke;
+    for (var n = -30; n <= 30; n += 2) {
+      final a = view.project(Solar3dVector(n.toDouble(),0,-30));
+      final b = view.project(Solar3dVector(n.toDouble(),0,30));
+      final c = view.project(Solar3dVector(-30,0,n.toDouble()));
+      final d = view.project(Solar3dVector(30,0,n.toDouble()));
+      canvas.drawLine(a, b, grid);
+      canvas.drawLine(c, d, grid);
+    }
+
+    // Ground shadows use the actual objects and geographic sun vector.
+    // Hidden objects still cast shadows; excluded objects do not.
+    _paintCastShadows(canvas, view);
+
+    // A tracker number is meaningful only INSIDE its inverter.
+    // Assign a distinct color by (inverterId, mpptIndex), never by
+    // mpptIndex alone: both inverters may correctly have MPPT 1.
+    final inverterIds = <String>[];
+    final trackerKeys = <String>[];
+    for (final panel in scene.objects.where(
+        (o) => o.kind == Solar3dObjectKind.panel)) {
+      final inverterId = panel.id.split('/').first;
+      if (!inverterIds.contains(inverterId)) {
+        inverterIds.add(inverterId);
+      }
+      final key = '$inverterId/${panel.mpptIndex}';
+      if (!trackerKeys.contains(key)) {
+        trackerKeys.add(key);
+      }
+    }
+    // Paint QUADRILATERALS across all objects in far-to-near order.
+    // In oblique camera angles a wall's near side and a panel's upper
+    // face can alternate visibility, unlike whole-object depth sorting.
+    const colors = [
+      Color(0xff21a0ba), Color(0xffa880db),
+      Color(0xffd99554), Color(0xff78bd71),
+      Color(0xffca6c91), Color(0xff57a58b),
+      Color(0xff7c9ce7), Color(0xffd4bb63),
+    ];
+    final faces = view.facesFarToNear(scene.objects.where((o) =>
+        !hiddenIds.contains(o.id)));
+    for (final surface in faces) {
+      final object = surface.object;
+      final selected = multipleSelection
+          ? selectedIds.contains(object.id) : object.id == selectedId;
+      final excluded = excludedIds.contains(object.id);
+      final isPanel = object.kind == Solar3dObjectKind.panel;
+      final inverterId = object.id.split('/').first;
+      final trackerKey = '$inverterId/${object.mpptIndex}';
+      final colorIndex = trackerKeys.indexOf(trackerKey);
+      final base = isPanel
+          ? colors[(colorIndex < 0 ? 0 : colorIndex) % colors.length]
+          : const Color(0xff687989);
+      final lit = excluded ? const Color(0xff64707a)
+          : isDaylight ? base : Color.lerp(base, Colors.black, .55)!;
+      final shade = isPanel ? directShadeByPanel[object.id] : null;
+      var tint = shade == null
+          ? lit : Color.lerp(lit, const Color(0xff61485a), shade)!;
+      if (surface.index == 0) {
+        tint = Color.lerp(tint, Colors.black, .38)!;
+      } else if (surface.index >= 2) {
+        tint = Color.lerp(tint, Colors.black,
+            surface.index.isEven ? .17 : .29)!;
+      }
+      _fill(canvas, surface.corners,
+          tint.withValues(alpha: excluded ? .3 : .98), selected);
+      if (isPanel && surface.index == 1 && shade != null && shade > 0) {
+        final anchor = view.project(object.center);
+        canvas.drawCircle(anchor.translate(0, -7), 3.5, Paint()
+          ..color = const Color(0xffffb15e));
+      }
+      if (isPanel && surface.index == 1) {
+        canvas.drawLine(surface.corners[0], surface.corners[2], Paint()
+          ..color = const Color(0xffe4efff).withValues(alpha: .16)
+          ..strokeWidth = 0.5);
+      }
+    }
+
+    // One selected-object label only. Obstacle labels used to be painted
+    // after each entire box and could visually cover raised panels.
+    final selectedObject = scene.objects.where(
+      (o) => o.id == selectedId && !hiddenIds.contains(o.id),
+    ).firstOrNull;
+    if (selectedObject != null) {
+      final isPanel = selectedObject.kind == Solar3dObjectKind.panel;
+      final inverterId = selectedObject.id.split('/').first;
+      final shade = directShadeByPanel[selectedObject.id];
+      final label = isPanel
+          ? 'Inv ${inverterIds.indexOf(inverterId) + 1}'
+            ' · placa ${selectedObject.id.split("/").last}'
+            ' · MPPT ${selectedObject.mpptIndex}'
+            '${shade == null ? "" : " · ${(shade * 100).round()}% sombra"}'
+          : 'Obstáculo ${selectedObject.id.length <= 13
+              ? selectedObject.id : selectedObject.id.substring(0, 13)}';
+      final layout = TextPainter(
+        text: TextSpan(text: label, style: const TextStyle(
+          fontSize: 11, fontWeight: FontWeight.bold,
+          color: Colors.white,
+        )),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final anchor = view.project(selectedObject.center);
+      layout.paint(canvas, anchor.translate(-layout.width / 2,
+          -layout.height / 2));
+    }
+    final title = TextPainter(
+      text: const TextSpan(text: 'CENA 3D · VISTA DE PROJETO (NÃO É FOTO)',
+        style: TextStyle(fontSize: 11,color:Color(0xffa7c6d2))),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    title.paint(canvas, const Offset(10,10));
+    final sunText = TextPainter(
+      text: TextSpan(
+        text: isDaylight ? 'SOMBRA DIRETA · ESTIMATIVA GEOMÉTRICA'
+            : 'NOITE · SEM IRRADIÂNCIA SOLAR DIRETA',
+        style: const TextStyle(fontSize: 10, color: Color(0xffbfccda)),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    sunText.paint(canvas, const Offset(10,28));
+    if (showCompass) _paintCompass(canvas, size, view);
+  }
+
+  /// Project opaque 3D boxes/panels onto the real ground plane (Y=0).
+  /// These footprints are visual approximations of direct-beam shadows:
+  /// partial shade ON a panel is evaluated separately by ray casting.
+  void _paintCastShadows(Canvas canvas, Solar3dProjection view) {
+    if (sunElevationDegrees <= 1) return;
+    final shadowPaint = Paint()
+      ..color = const Color(0xff02070b).withValues(alpha: .36)
+      ..style = PaintingStyle.fill;
+    for (final object in scene.objects) {
+      if (excludedIds.contains(object.id)) continue;
+      final hull = groundShadowFootprint(
+        object: object,
+        view: view,
+        sunAzimuthDegrees: sunAzimuthDegrees,
+        sunElevationDegrees: sunElevationDegrees,
+      );
+      if (hull.length < 3) continue;
+      final points = hull.map((p) => view.project(
+        Solar3dVector(p.dx, 0, p.dy))).toList();
+      canvas.drawPath(Path()..addPolygon(points, true), shadowPaint);
+    }
+  }
+
+  /// Returns a convex ground footprint in metric X/Z coordinates, independent
+  /// of canvas/rasterization. This is deliberately testable without a GPU.
+  static List<Offset> groundShadowFootprint({
+    required Solar3dObject object,
+    required Solar3dProjection view,
+    required double sunAzimuthDegrees,
+    required double sunElevationDegrees,
+  }) {
+    if (sunElevationDegrees <= 1) return const [];
+    final azi = sunAzimuthDegrees * math.pi / 180;
+    final ele = sunElevationDegrees * math.pi / 180;
+    final sunEast = math.sin(azi) * math.cos(ele);
+    final sunNorth = math.cos(azi) * math.cos(ele);
+    final sunUp = math.sin(ele);
+    final ground = <Offset>[];
+    for (final dx in [-1.0, 1.0]) {
+      for (final dy in [-1.0, 1.0]) {
+        for (final dz in [-1.0, 1.0]) {
+          final world = view.transform(object, Solar3dVector(
+            dx * object.width / 2,
+            dy * object.height / 2,
+            dz * object.depth / 2,
+          ));
+          final distance = (math.max(0, world.y) / sunUp).clamp(0, 120);
+          ground.add(Offset(world.x, world.z));
+          ground.add(Offset(
+            world.x - sunEast * distance,
+            world.z - sunNorth * distance,
+          ));
+        }
+      }
+    }
+    return _convexHull(ground);
+  }
+
+  /// Convex hull in the terrain X/Z coordinates. Sorting is deterministic
+  /// so that the polygons do not self-intersect under camera rotation.
+  static List<Offset> _convexHull(List<Offset> points) {
+    if (points.length < 3) return points;
+    final sorted = [...points]..sort((a,b) {
+      final first = a.dx.compareTo(b.dx);
+      return first != 0 ? first : a.dy.compareTo(b.dy);
+    });
+    double cross(Offset a, Offset b, Offset c) =>
+        (b.dx - a.dx) * (c.dy - a.dy) -
+        (b.dy - a.dy) * (c.dx - a.dx);
+    final lower = <Offset>[];
+    for (final p in sorted) {
+      while (lower.length >= 2 &&
+          cross(lower[lower.length - 2], lower.last, p) <= 0) {
+        lower.removeLast();
+      }
+      lower.add(p);
+    }
+    final upper = <Offset>[];
+    for (final p in sorted.reversed) {
+      while (upper.length >= 2 &&
+          cross(upper[upper.length - 2], upper.last, p) <= 0) {
+        upper.removeLast();
+      }
+      upper.add(p);
+    }
+    return [...lower.take(lower.length - 1),
+        ...upper.take(upper.length - 1)];
+  }
+
+  void _paintCompass(Canvas canvas, Size size, Solar3dProjection view) {
+    // Geographic headings are projected using the SAME camera transform
+    // as the panels. This is a true world-locked compass, not screen North.
+    const radius = 43.0;
+    final c = Offset(math.max(radius + 8, size.width - radius - 12),
+        radius + 16);
+    canvas.drawCircle(c, radius + 7, Paint()
+      ..color = const Color(0xff10222d).withValues(alpha: .92));
+    canvas.drawCircle(c, radius, Paint()
+      ..color = const Color(0xff93b0c4)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke);
+    final pivot = view.project(view.origin);
+    final headings = <(String, Solar3dVector, Color)>[
+      ('N', const Solar3dVector(0, 0, 1), const Color(0xffffaa68)),
+      ('S', const Solar3dVector(0, 0, -1), const Color(0xffbfced7)),
+      ('L', const Solar3dVector(1, 0, 0), const Color(0xffbfced7)),
+      ('O', const Solar3dVector(-1, 0, 0), const Color(0xffbfced7)),
+    ];
+    for (final entry in headings) {
+      final point = view.project(view.origin + entry.$2);
+      final offset = point - pivot;
+      if (offset.distance < .001) continue;
+      final direction = offset / offset.distance;
+      final tip = c + direction * 28;
+      canvas.drawLine(c, c + direction * 19, Paint()
+        ..color = entry.$3
+        ..strokeWidth = entry.$1 == 'N' ? 2.7 : 1.4);
+      final label = TextPainter(
+        text: TextSpan(text: entry.$1, style: TextStyle(
+          fontSize: 12, fontWeight: FontWeight.bold, color: entry.$3)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(canvas,
+        tip.translate(-label.width / 2, -label.height / 2));
+    }
+    canvas.drawCircle(c, 3, Paint()..color = const Color(0xffffffff));
+  }
+
+  void _fill(Canvas canvas, List<Offset> corners, Color color, bool selected) {
+    final path = Path()..moveTo(corners.first.dx,corners.first.dy);
+    for (var i=1;i<corners.length;i++) {
+      path.lineTo(corners[i].dx,corners[i].dy);
+    }
+    path.close();
+    canvas.drawPath(path, Paint()..color=color);
+    canvas.drawPath(path, Paint()..style=PaintingStyle.stroke
+      ..strokeWidth=selected?2.8:1
+      ..color=selected?const Color(0xffffd083):const Color(0xffb2d2db));
+  }
+
+  @override
+  bool shouldRepaint(covariant Solar3dScenePainter old) =>
+      old.scene != scene || old.hiddenIds != hiddenIds ||
+      old.excludedIds != excludedIds || old.selectedId != selectedId ||
+      old.selectedIds != selectedIds ||
+      old.multipleSelection != multipleSelection ||
+      old.frameScene != frameScene ||
+      old.yaw != yaw || old.pitch != pitch || old.zoom != zoom ||
+      old.cameraPan != cameraPan || old.showCompass != showCompass ||
+      old.directShadeByPanel != directShadeByPanel ||
+      old.sunAzimuthDegrees != sunAzimuthDegrees ||
+      old.sunElevationDegrees != sunElevationDegrees;
+}

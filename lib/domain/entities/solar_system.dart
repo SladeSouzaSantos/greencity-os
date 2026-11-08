@@ -1,5 +1,6 @@
 import 'solar_array.dart';
 import 'inverter.dart';
+import '../solar3d/solar3d_optical_correction.dart';
 
 class SolarSystem {
   final String id;
@@ -11,10 +12,15 @@ class SolarSystem {
     required this.id,
     required this.name,
     required this.inverter,
-    this.arrays = const [],
-  });
+    List<SolarArray> arrays = const [],
+  }) : arrays = List<SolarArray>.of(arrays);
   
-  int calculateSystemGenerationForMonth(int monthIndex, List<double>? monthlyTmax) {
+  int calculateSystemGenerationForMonth(
+    int monthIndex,
+    List<double>? monthlyTmax, {
+    Map<int, List<double>>? opticalRetentionByMppt,
+    Map<int, Solar3dMpptOpticalGroup>? opticalMpptGroups,
+  }) {
     if (arrays.isEmpty || arrays.any((a) => a.solarScenarioResult == null)) return 0;
 
     // Lógica de Temperatura
@@ -43,7 +49,38 @@ class SolarSystem {
       mpptGroups.putIfAbsent(array.mpptIndex, () => []).add(array);
     }
 
-    for (var group in mpptGroups.values) {
+    // A 3D study can assign individual modules to a different MPPT of
+    // THIS inverter. Use its hypothetical group powers + baseline HSP
+    // rather than silently applying a new MPPT ratio to old array wiring.
+    // Production wiring in SolarArray is not modified.
+    if (opticalMpptGroups != null) {
+      final accountedPower = opticalMpptGroups.values.fold<double>(
+          0, (sum, group) => sum + group.powerWp);
+      if ((accountedPower - totalSystemPower).abs() > 1e-5) {
+        throw const FormatException(
+          'Potência 3D não corresponde ao inversor de referência');
+      }
+      for (final entry in opticalMpptGroups.entries) {
+        final mppt = entry.key, group = entry.value;
+        if (mppt < 1 || mppt > inverter.mpptCount ||
+            group.baselineMonthlyHsp.length != 12 ||
+            group.retentionMonthly.length != 12) {
+          throw const FormatException('Grupo MPPT óptico inválido');
+        }
+        final ratio = group.retentionMonthly[monthIndex];
+        final baseHsp = group.baselineMonthlyHsp[monthIndex];
+        if (!ratio.isFinite || ratio < 0 || ratio > 1 ||
+            !baseHsp.isFinite || baseHsp < 0) {
+          throw const FormatException('Irradiância MPPT óptica inválida');
+        }
+        totalGeneration += (group.powerWp / 1000.0 * baseHsp * ratio *
+          diasNoMes * fatorDesempenho * fatorTemperatura * eficienciaInversor);
+      }
+      return totalGeneration.ceil();
+    }
+
+    for (final mppt in mpptGroups.entries) {
+      final group = mppt.value;
       // Nivelamento do HSP pelo menor do MPPT
       double minHspInMppt = group
           .map((a) => a.solarScenarioResult!.monthlyHspReal[monthIndex])
@@ -52,7 +89,17 @@ class SolarSystem {
       // Potência total do MPPT em kW!
       double pKw = group.fold(0, (sum, array) => sum + array.totalPowerWp) / 1000.0;
 
-      totalGeneration += (pKw * minHspInMppt * diasNoMes * fatorDesempenho * fatorTemperatura * eficienciaInversor);
+      // Optional 3D optical retention acts ONCE on the baseline MPPT
+      // production. Never apply individual plate losses by multiplying all
+      // percentages: each MPPT receives a single power/POA-weighted ratio.
+      final opticalFactor = opticalRetentionByMppt?[mppt.key]?[monthIndex] ?? 1.0;
+      if (!opticalFactor.isFinite || opticalFactor < 0 ||
+          opticalFactor > 1) {
+        throw const FormatException('Correção óptica por MPPT inválida');
+      }
+      totalGeneration += (pKw * minHspInMppt * opticalFactor *
+          diasNoMes * fatorDesempenho * fatorTemperatura *
+          eficienciaInversor);
     }
     return totalGeneration.ceil();
   }

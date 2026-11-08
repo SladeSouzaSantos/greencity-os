@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:isar/isar.dart';
@@ -17,6 +19,9 @@ import '../../widgets/photovoltaic/project/project_summary_header.dart';
 import '../../widgets/photovoltaic/project/sizing_suggestion_card.dart';
 import '../../widgets/photovoltaic/project/solar_system_card.dart';
 import 'quote_details_page.dart';
+import 'solar3d_editor_page.dart';
+import '../../../domain/solar3d/solar3d_optical_correction.dart';
+import '../../../data/datasources/solar3d_scene_storage.dart';
 
 class SolarProjectDesignerPage extends StatefulWidget {
   final SolarProject project;
@@ -35,11 +40,57 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
   String? selectedInverterManufacturer;
   Inverter? selectedInverter;
   List<Inverter> allInverters = [];
+  int _opticalLoadRevision = 0;
+
+  Solar3dSceneStorage get _sceneStorage =>
+      Solar3dSceneStorage.forProject(widget.project, systems);
+
+  /// Restore only when the scene, equipment and HSP reference match.
+  Future<void> _restoreAppliedCorrection() async {
+    if (systems.isEmpty || widget.project.hasAppliedOpticalCorrection) {
+      return;
+    }
+    final revision = _opticalLoadRevision;
+    final signature = Solar3dOpticalCorrection.signatureFor(systems);
+    try {
+      final applied = await _sceneStorage.loadAppliedCorrection(
+          systems: systems);
+      if (!mounted || revision != _opticalLoadRevision ||
+          signature != Solar3dOpticalCorrection.signatureFor(systems) ||
+          widget.project.opticalCorrection != null || applied == null) {
+        return;
+      }
+      setState(() {
+        widget.project.systems = systems;
+        widget.project.opticalCorrection = applied;
+      });
+    } catch (error) {
+      debugPrint('Solar3D correction restore skipped: $error');
+    }
+  }
+
+  Future<void> _clearAppliedCorrection() async {
+    try {
+      await _sceneStorage.clearAppliedCorrection();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Não foi possível limpar a correção local: $error'),
+        ));
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-
+    // SolarProject historically defaults to const []. Never alias a
+    // possibly unmodifiable list into an editable designer.
+    systems = List<SolarSystem>.of(widget.project.systems);
+    widget.project.systems = systems;
+    if (systems.isNotEmpty) {
+      unawaited(_restoreAppliedCorrection());
+    }
     _loadInitialData();
 
     final placeholderModule = PvModule(
@@ -153,12 +204,26 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                   ElevatedButton(
                     onPressed: selectedInverter == null ? null : () {
                       setState(() {
+                        // Individual 3D module IDs inherit this inverter ID.
+                        final seed = DateTime.now().microsecondsSinceEpoch;
+                        var id = seed.toString();
+                        var suffix = 1;
+                        while (systems.any((system) => system.id == id)) {
+                          id = '${seed}_${suffix++}';
+                        }
                         systems.add(SolarSystem(
-                          id: DateTime.now().millisecondsSinceEpoch.toString(),
+                          id: id,
                           name: "Sistema ${systems.length + 1}",
                           inverter: selectedInverter!,
                           arrays: [],
                         ));
+                        // The project immediately owns the editable list,
+                        // including before the first HSP calculation.
+                        widget.project.systems = systems;
+                        // A changed inverter set cannot reuse a previously
+                        // applied optical generation estimate.
+                        _opticalLoadRevision++;
+                        widget.project.opticalCorrection = null;
                       });
                       Navigator.pop(context);
                     },
@@ -188,6 +253,10 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
     }
     
     widget.project.systems = systems;
+    // Recalculating the HSP invalidates old factors, not the 3D scene.
+    _opticalLoadRevision++;
+    widget.project.opticalCorrection = null;
+    unawaited(_clearAppliedCorrection());
 
     // 2. Criamos uma lista única de cenários para o BLoC calcular
     // O BLoC precisa de List<SolarScenario> para processar a radiação
@@ -348,6 +417,21 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                 onDetailsTap: () {},
               ),
 
+              if (widget.project.hasAppliedOpticalCorrection)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () async {
+                      _opticalLoadRevision++;
+                      await _clearAppliedCorrection();
+                      if (!mounted) return;
+                      setState(() => widget.project.opticalCorrection = null);
+                    },
+                    icon: const Icon(Icons.restore_outlined),
+                    label: const Text('Remover correção 3D e comparar '
+                        'geração original'),
+                  ),
+                ),
               const SizedBox(height: 20),
               const Divider(),
 
@@ -363,6 +447,8 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
               ] else ...[
                 ...systems.map((s) => SolarSystemCard(
                   system: s,
+                  opticalCorrection: widget.project.hasAppliedOpticalCorrection
+                      ? widget.project.opticalCorrection : null,
                   onDeleteSystem: (){
                     setState(() => systems.remove(s));
                     _onCalculatePressed();
@@ -392,6 +478,60 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
               ),
 
               if (systems.isNotEmpty && systems.any((s) => s.arrays.isNotEmpty)) ...[
+                const Divider(height: 28),
+                Card(child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(children: [
+                    const Text('Laboratório 3D de Sombreamento',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    const Text('Visualize módulos individuais, obstáculos, '
+                      'MPPTs e HSP óptico. Calcule os 12 meses para aplicar '
+                      'uma correção óptica experimental à geração estimada, '
+                      'sem alterar as conexões elétricas.'),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: () async {
+                        // Reopening without editing must preserve applied losses.
+                        // Only scene edits or explicit removal invalidate them.
+                        final correction = await Navigator.push<
+                            Solar3dOpticalCorrection>(
+                          context, MaterialPageRoute(
+                            builder: (_) => Solar3dEditorPage(
+                              project: widget.project, systems: systems),
+                          ),
+                        );
+                        if (!context.mounted) return;
+                        // Rebuild even on plain Back if a scene edit
+                        // invalidated the previously applied correction.
+                        if (correction == null) {
+                          setState(() {});
+                          return;
+                        }
+                        if (!correction.isValidFor(systems)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text(
+                              'Configuração elétrica alterada; refaça '
+                              'a análise óptica 3D.')),
+                          );
+                          return;
+                        }
+                        setState(() {
+                          widget.project.systems = systems;
+                          widget.project.opticalCorrection = correction;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text(
+                            'Correção óptica aplicada e salva neste '
+                            'dispositivo. Confira a comparação sem/com '
+                            'sombra no cartão de geração.')),
+                        );
+                      },
+                      icon: const Icon(Icons.view_in_ar_outlined),
+                      label: const Text('ABRIR ANÁLISE 3D'),
+                    ),
+                  ]),
+                )),
                 const Divider(height: 40),
                 _buildOrcamentoPage(),
               ]

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../domain/entities/solar_system.dart';
 import '../../../../domain/entities/solar_array.dart';
+import '../../../../domain/solar3d/solar3d_optical_correction.dart';
 
 class SolarSystemCard extends StatelessWidget {
   final SolarSystem system;
@@ -8,6 +9,7 @@ class SolarSystemCard extends StatelessWidget {
   final VoidCallback onAddArray;
   final Function(SolarArray) onRemoveArray;
   final Function(SolarArray, int) onMpptChanged;
+  final Solar3dOpticalCorrection? opticalCorrection;
 
   const SolarSystemCard({
     super.key,
@@ -16,6 +18,7 @@ class SolarSystemCard extends StatelessWidget {
     required this.onAddArray,
     required this.onRemoveArray,
     required this.onMpptChanged,
+    this.opticalCorrection,
   });
 
   @override
@@ -54,6 +57,44 @@ class SolarSystemCard extends StatelessWidget {
             )
           else
             ...system.arrays.map((array) => _buildArrayTile(array)),
+
+          // The original SolarArray MPPT remains the registered
+          // connection. In the 3D study, each physical panel may have its
+          // own hypothetical MPPT of THIS inverter.
+          if (opticalCorrection?.groupsBySystemMppt[system.id] != null) ...[
+            const Divider(),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: Text('Distribuição óptica experimental 3D',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            for (final entry in (opticalCorrection!
+                .groupsBySystemMppt[system.id]!.entries.toList()
+                  ..sort((a, b) => a.key.compareTo(b.key))))
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'MPPT ${entry.key} · '
+                    '${entry.value.moduleCount} placa(s) · '
+                    '${(entry.value.powerWp / 1000).toStringAsFixed(3)} kWp · '
+                    'HSP óptico médio: '
+                    '${(List<double>.generate(12, (m) =>
+                      entry.value.baselineMonthlyHsp[m] *
+                        entry.value.retentionMonthly[m])
+                        .reduce((a, b) => a + b) / 12).toStringAsFixed(2)}',
+                  ),
+                ),
+              ),
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('O MPPT alterado no 3D vale apenas para '
+                'a estimativa óptica; a configuração elétrica '
+                'original não foi modificada. Verifique strings, '
+                'tensão e corrente antes de instalar.'),
+            ),
+          ],
 
           // Botão de Ação
           Padding(
@@ -97,7 +138,6 @@ class SolarSystemCard extends StatelessWidget {
 
     double hspIndividual = array.solarScenarioResult?.averageHspReal ?? 0.0;
     double hspEfetivo = system.getEffectiveHspForArray(array);
-    
     // Cálculo de "perda por incompatibilidade" (mismatch)
     double mismatchLoss = hspIndividual > 0 
         ? (1 - (hspEfetivo / hspIndividual)) * 100 
@@ -151,14 +191,24 @@ class SolarSystemCard extends StatelessWidget {
             ), 
             const SizedBox(height: 4),          
             Text(
-              "Perda Sombra: ${perdaSombreamento.toStringAsFixed(1)}%",
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.redAccent),
+              "Perda no HSP base (sem obstáculos 3D): "
+              "${perdaSombreamento.toStringAsFixed(1)}%",
+              style: TextStyle(fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: perdaSombreamento > 0
+                      ? Colors.redAccent : Colors.grey.shade700),
             ),
+            if (opticalCorrection != null)
+              const Text(
+                'Sombreamento 3D incluído separadamente na geração '
+                'corrigida; veja o resumo por MPPT abaixo.',
+                style: TextStyle(fontSize: 11),
+              ),
             if (mismatchLoss > 1) 
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                "⚠ Perda por mismatch: ${mismatchLoss.toStringAsFixed(1)}% (Verifique o MPPT!)",
+                "⚠ Redução de HSP por agrupamento do MPPT: ${mismatchLoss.toStringAsFixed(1)}% (aproximação óptica, não perda elétrica I-V)",
                 style: const TextStyle(fontSize: 10, color: Colors.orange, fontWeight: FontWeight.bold),
               ),
             ),
