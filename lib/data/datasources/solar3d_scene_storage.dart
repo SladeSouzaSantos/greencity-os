@@ -30,6 +30,15 @@ class Solar3dSceneStorage {
     await file.writeAsString(document.encode(), flush: true);
   }
 
+  /// Removes only THIS project's scene file, not any other project,
+  /// cached equipment data, or the production HSP results.
+  Future<void> clear() async {
+    final file = await _file();
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
   Future<Solar3dSceneDocument?> load() async {
     final file = await _file();
     if (!await file.exists()) return null;

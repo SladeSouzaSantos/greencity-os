@@ -186,6 +186,74 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     return null;
   }
 
+  int _systemIndexFor(String panelId) =>
+      widget.systems.indexWhere((s) => panelId.startsWith('${s.id}/'));
+
+  String _trackerLabel(Solar3dObject panel) {
+    final index = _systemIndexFor(panel.id);
+    final sys = index < 0 ? null : widget.systems[index];
+    return 'Inversor ${index + 1}'
+        '${sys == null ? "" : " · ${sys.inverter.modelName}"}'
+        ' / MPPT ${panel.mpptIndex ?? "?"}';
+  }
+
+  Future<void> _resetStudy() async {
+    if (busy) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Restaurar projeto original?'),
+        content: const Text(
+          'Remover todos os objetos/obstáculos e posições salvos no '
+          'laboratório 3D, restaurar os MPPTs de cada arranjo original '
+          'e descartar os 12 meses de resultados ópticos? '
+          'A estimativa de geração voltará ao HSP original. '
+          'O cadastro de inversores e módulos não será apagado.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Restaurar original')),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    try {
+      await storage!.clear();
+      if (!mounted) return;
+      final base = catalogInitialScene ??
+          Solar3dPlanFactory.fromSystems(widget.systems);
+      sunPlayback?.cancel();
+      sunPlayback = null;
+      _onScaleEnd();
+      widget.project.opticalCorrection = null;
+      setState(() {
+        document = Solar3dSceneDocument(scene: base);
+        cameraFrameScene = base;
+        selectedId = base.objects.firstWhere(
+          (o) => o.kind == Solar3dObjectKind.panel).id;
+        monthly = {};
+        lastCalculatedHourlyEndpoint = null;
+        sceneRevision++;
+      });
+      _notice('Cena e análise 3D restauradas. '
+          'A geração voltou ao projeto original.');
+    } catch (err) {
+      _notice('Falha ao restaurar cena: $err');
+    }
+  }
+
+  void _setPanelMppt(Solar3dObject panel, int mppt) {
+    final system = _systemFor(panel.id);
+    if (system == null || mppt < 1 ||
+        mppt > system.inverter.mpptCount) {
+      _notice('Esse MPPT não pertence ao inversor desta placa.');
+      return;
+    }
+    _replace(panel.copyWith(mpptIndex: mppt));
+  }
+
   SolarSystem? _systemFor(String panelId) {
     for (final system in widget.systems) {
       if (panelId.startsWith('${system.id}/')) return system;
@@ -994,11 +1062,17 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             'O fuso é ajustável (padrão UTC−3), pois depende do projeto.'),
         const Divider(),
         Text('Objetos e módulos', style: Theme.of(context).textTheme.titleMedium),
+        const Text('Cada inversor possui seus próprios MPPTs: '
+            '“Inversor 1 / MPPT 1” é independente de '
+            '“Inversor 2 / MPPT 1”. Selecione uma placa '
+            'e escolha um MPPT existente no inversor correspondente.'),
         Wrap(spacing: 8, runSpacing: 6, children: [
           for (final item in doc.scene.objects)
             InputChip(
               label: Text(item.kind == Solar3dObjectKind.panel
-                ? '${item.id} · MPPT ${item.mpptIndex}' : 'Obstáculo ${item.id}'),
+                ? '${item.id.split("/").skip(1).join("/")}'
+                  ' · ${_trackerLabel(item)}'
+                : 'Obstáculo ${item.id}'),
               selected: selectedId == item.id,
               onPressed: () => setState(() => selectedId = item.id),
               avatar: Icon(item.kind == Solar3dObjectKind.panel
@@ -1067,18 +1141,37 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             ),
           ],
           if (current.kind == Solar3dObjectKind.panel) ...[
-            if (mpptSystem != null) DropdownButtonFormField<int>(
-              key: ValueKey('${current.id}/${current.mpptIndex}'),
-              initialValue: current.mpptIndex,
-              decoration: const InputDecoration(labelText: 'MPPT — somente cenário 3D'),
-              items: [
-                for(var idx=1;idx<=mpptSystem.inverter.mpptCount;idx++)
-                  DropdownMenuItem(value:idx,child: Text('MPPT $idx')),
-              ],
-              onChanged: (value) {
-                if(value!=null) _replace(current.copyWith(mpptIndex:value));
-              },
-            ),
+            if (mpptSystem != null) ...[
+              Text('Conexão no laboratório: ${_trackerLabel(current)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 7),
+              DropdownButtonFormField<int>(
+                key: ValueKey('${current.id}/${current.mpptIndex}'),
+                initialValue: current.mpptIndex! <=
+                        mpptSystem.inverter.mpptCount
+                    ? current.mpptIndex : null,
+                decoration: InputDecoration(
+                  labelText: 'MPPT da placa — inversor ${_systemIndexFor(current.id) + 1}',
+                  helperText: 'Altera apenas a distribuição hipotética '
+                      'na análise 3D (não reconfigura o circuito físico).',
+                ),
+                items: [
+                  for (var idx = 1; idx <= mpptSystem.inverter.mpptCount; idx++)
+                    DropdownMenuItem(
+                      value: idx,
+                      child: Text('MPPT $idx · '
+                          '${mpptSystem.inverter.modelName}'),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) _setPanelMppt(current, value);
+                },
+              ),
+              if (mpptSystem.inverter.mpptCount == 1)
+                const Text('Este inversor possui somente 1 MPPT '
+                    'no cadastro. Para usar mais MPPTs, selecione '
+                    'um inversor compatível no projeto original.'),
+            ],
             OutlinedButton.icon(onPressed: _setString,
               icon: const Icon(Icons.cable), label: Text(
                 'String: ${current.stringId ?? "não definida"} (estudo)')),
@@ -1102,14 +1195,16 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           const Text('Ocultar muda só a visualização. Ignorar exclui o '
               'objeto dos raios geométricos, sem alterar o circuito do inversor.'),
         ],
-        Row(children: [
-          OutlinedButton.icon(onPressed:_addObstacle,
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          OutlinedButton.icon(onPressed: busy ? null : _addObstacle,
             icon: const Icon(Icons.add_box_outlined),
             label: const Text('Adicionar obstáculo')),
-          const SizedBox(width:8),
-          FilledButton.icon(onPressed:_save,
+          FilledButton.icon(onPressed: busy ? null : _save,
             icon: const Icon(Icons.save_outlined),
             label: const Text('Salvar cena')),
+          OutlinedButton.icon(onPressed: busy ? null : _resetStudy,
+            icon: const Icon(Icons.restart_alt_outlined),
+            label: const Text('RESETAR ANÁLISE 3D')),
         ]),
         const Divider(),
         Text('HSP por placa · consulta horária opcional',
