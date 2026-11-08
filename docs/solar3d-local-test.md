@@ -164,6 +164,25 @@ Na tela **ABRIR ANÁLISE 3D**:
 **Limitação:** a vista Flutter nativa continua sendo projeção 3D
 simplificada e não um ambiente Three.js com seleção/perspectiva GPU completa.
 
+### Obstáculos: altura da BASE em relação ao solo
+
+- Para obstáculos/construções, informar `Y = 0 m` significa que a
+  **face inferior está apoiada no terreno**. O editor calcula
+  `Y_centro = Y_base + altura_total / 2` mantendo o contrato interno
+  do raycasting, do renderer e do JSON local.
+- Por exemplo: base `0 m`, altura total `3 m`, centro `1,5 m`
+  e topo `3 m`. Subir a base para `2 m` posiciona o centro em
+  `3,5 m`, sem mudar a altura do obstáculo.
+- Alterar a altura total via slider mantém a base fixa, fazendo o
+  obstáculo crescer/encolher para cima. Drag altera apenas X/Z.
+- Cenas salvas continuam com `schema_version=1` e coordenadas
+  internas de **centro**. Não se reinterpreta o JSON antigo. Se uma
+  cena antiga tinha o centro do obstáculo em `Y=0` e altura de
+  `3 m`, a tela mostrará base `-1,5 m` até o usuário escolher
+  **Apoiar base no solo (0 m)**; não há migração silenciosa.
+- Testar adicionar obstáculo, editar base, redimensionar, salvar,
+  reabrir, conferir topo/base e comparar raycast de sombras.
+
 ## Editor 3D — referência de altura na borda inferior, touch e ciclo solar
 
 1. **Altura da borda inferior ao solo (08/11/2026):** o usuário informa

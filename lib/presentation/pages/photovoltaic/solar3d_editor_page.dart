@@ -13,6 +13,7 @@ import '../../../domain/entities/solar_system.dart';
 import '../../../domain/solar3d/solar3d_geometric_shading.dart';
 import '../../../domain/solar3d/solar3d_plan_factory.dart';
 import '../../../domain/solar3d/solar3d_panel_height.dart';
+import '../../../domain/solar3d/solar3d_obstacle_height.dart';
 import '../../../domain/solar3d/solar3d_study_string_suggestions.dart';
 import '../../../domain/solar3d/solar3d_optical_correction.dart';
 import '../../../domain/solar3d/solar3d_electrical_audit.dart';
@@ -416,8 +417,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       center: const Solar3dVector(0, 1.5, 0),
       width: 2, depth: 2, height: 3,
     );
+    final grounded = Solar3dObstacleHeight.withBase(item, 0);
     _changeDocument(Solar3dSceneDocument(
-      scene: Solar3dScene([...doc.scene.objects, item]),
+      scene: Solar3dScene([...doc.scene.objects, grounded]),
       hiddenIds: doc.hiddenIds, excludedIds: doc.excludedIds,
     ));
     setState(() => selectedId = item.id);
@@ -1120,7 +1122,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     final heightCtrl = TextEditingController(
       text: (current.kind == Solar3dObjectKind.panel
           ? Solar3dPanelHeight.lowerEdgeOf(current)
-          : current.center.y).toStringAsFixed(3),
+          : Solar3dObstacleHeight.baseOf(current)).toStringAsFixed(3),
     );
     final accepted = await showDialog<bool>(context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1137,7 +1139,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               decoration: InputDecoration(
                 labelText: current.kind == Solar3dObjectKind.panel
                     ? 'Altura da borda inferior ao solo (m)'
-                    : 'Y · altura do centro do obstáculo (m)',
+                    : 'Y · altura da BASE ao solo (m)',
               ),
               keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true)),
           ],
@@ -1159,7 +1161,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     if (x == null || z == null || y == null ||
         !x.isFinite || !z.isFinite || !y.isFinite ||
         x.abs() > 500 || z.abs() > 500 || y < 0 || y > 500) {
-      _notice('Coordenadas inválidas: X/Z ±500 m e altura Y de 0 a 500 m.');
+      _notice('Coordenadas inválidas: X/Z ±500 m e base/borda de 0 a 500 m.');
       return;
     }
     final translated = current.copyWith(center: Solar3dVector(
@@ -1168,7 +1170,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     try {
       _replace(current.kind == Solar3dObjectKind.panel
           ? Solar3dPanelHeight.withLowerEdge(translated, y)
-          : translated.copyWith(center: Solar3dVector(x, y, z)));
+          : Solar3dObstacleHeight.withBase(translated, y));
     } on FormatException catch (error) {
       _notice(error.message);
     }
@@ -1282,7 +1284,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         const SizedBox(height: 8),
         const Text('N / S / L / O: bússola geográfica, acompanha a câmera. '
             'X: Leste/Oeste · Z: Norte/Sul · '
-            'altura da placa: borda inferior ao solo.'),
+            'altura da placa: borda inferior ao solo; '
+            'altura do obstáculo: base ao solo (0 m = apoiado no chão).'),
         const Text('Toque em uma placa para mover; arraste no fundo para '
             'girar a câmera. Faça pinça com dois dedos para zoom e giro; '
             'no computador, use a roda do mouse para zoom.'),
@@ -1457,10 +1460,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           Text('Selecionado: ${current.id}',style: Theme.of(context).textTheme.titleMedium),
           Text('Posição (m): Leste ${current.center.x.toStringAsFixed(2)}, '
               '${current.kind == Solar3dObjectKind.panel
-                  ? "borda inferior" : "centro"} '
+                  ? "borda inferior" : "base"} '
               '${(current.kind == Solar3dObjectKind.panel
                   ? Solar3dPanelHeight.lowerEdgeOf(current)
-                  : current.center.y).toStringAsFixed(2)}, '
+                  : Solar3dObstacleHeight.baseOf(current)).toStringAsFixed(2)}, '
               'Norte ${current.center.z.toStringAsFixed(2)}'),
           if (current.kind == Solar3dObjectKind.panel) ...[
             Text('Altura da BORDA INFERIOR ao solo: '
@@ -1483,6 +1486,20 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                   Solar3dPanelHeight.withLowerEdge(current, 0)),
                 icon: const Icon(Icons.vertical_align_bottom),
                 label: const Text('Elevar borda inferior a 0 m'),
+              ),
+            ],
+          ] else ...[
+            Text('Altura da BASE ao solo: '
+                '${Solar3dObstacleHeight.baseOf(current).toStringAsFixed(3)} m'
+                ' · Topo: ${Solar3dObstacleHeight.topOf(current).toStringAsFixed(3)} m'),
+            if (Solar3dObstacleHeight.baseOf(current) < -1e-4) ...[
+              const Text('Base abaixo do terreno nesta cena antiga. '
+                  'A posição anterior foi preservada; corrija manualmente.'),
+              OutlinedButton.icon(
+                onPressed: () => _replace(
+                    Solar3dObstacleHeight.withBase(current, 0)),
+                icon: const Icon(Icons.vertical_align_bottom),
+                label: const Text('Apoiar base no solo (0 m)'),
               ),
             ],
           ],
@@ -1527,7 +1544,13 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             Slider(
               value: current.height.clamp(0.2, 20.0).toDouble(),
               min: 0.2, max: 20,
-              onChanged: (v) => _replace(current.copyWith(height: v)),
+              onChanged: (v) {
+                try {
+                  _replace(Solar3dObstacleHeight.withHeight(current, v));
+                } on FormatException catch (error) {
+                  _notice(error.message);
+                }
+              },
             ),
           ],
           if (current.kind == Solar3dObjectKind.panel) ...[
