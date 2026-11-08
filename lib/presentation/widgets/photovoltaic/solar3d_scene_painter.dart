@@ -159,9 +159,13 @@ class Solar3dScenePainter extends CustomPainter {
     for (final panel in scene.objects.where(
         (o) => o.kind == Solar3dObjectKind.panel)) {
       final inverterId = panel.id.split('/').first;
-      if (!inverterIds.contains(inverterId)) inverterIds.add(inverterId);
+      if (!inverterIds.contains(inverterId)) {
+        inverterIds.add(inverterId);
+      }
       final key = '$inverterId/${panel.mpptIndex}';
-      if (!trackerKeys.contains(key)) trackerKeys.add(key);
+      if (!trackerKeys.contains(key)) {
+        trackerKeys.add(key);
+      }
     }
     final visible = scene.objects.where((o) =>
         !hiddenIds.contains(o.id)).toList()
