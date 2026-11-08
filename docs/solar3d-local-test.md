@@ -345,10 +345,11 @@ seja uma perda elétrica I-V de string ou de MPPT.
    recolhível de comparação para os 12 meses. Cada cartão de arranjo
    também identifica o HSP óptico estimado do respectivo MPPT.
 6. **Remover correção 3D e comparar geração original** volta
-   imediatamente à estimativa original. Abrir novamente o editor ou
-   recalcular as bases HSP invalida o ajuste aplicado, por segurança.
-   Neste estágio o ajuste vale apenas durante a sessão de projeto:
-   **não foi persistido como rendimento elétrico certificado**.
+   imediatamente à estimativa original e apaga os fatores salvos, sem
+   apagar a cena. Abrir o editor sem alterar nada mantém a correção.
+   Alterar a cena, os MPPTs ou recalcular HSP invalida o ajuste.
+   O salvamento local é de uma estimativa óptica experimental,
+   **não de rendimento elétrico certificado**.
 
 ### Integração numérica
 
@@ -751,11 +752,11 @@ automaticamente. Não usa um 2026 incompleto.
   alteração pendente é gravada. O comando **Resetar análise 3D**
   continua apagando o documento local após concluir operações
   anteriores.
-- Salvamento local guarda **apenas a cena**; não guarda resultados
-  de HSP por mês, validação elétrica, ligação física nem uma
-  correção óptica permanente. A modificação de MPPT/geometria
-  invalida corretamente os resultados mensais que foram
-  calculados com a configuração anterior.
+- O salvamento automático guarda **a cena**. Os fatores
+  ópticos dos 12 meses são salvos somente ao confirmar
+  **APLICAR CORREÇÃO ÓPTICA NA GERAÇÃO**, vinculados à cena
+  e à assinatura do dimensionamento/HSP. Uma mudança de geometria
+  ou MPPT invalida o ajuste; não persiste ligação elétrica física.
 
 ### Cenário de microinversores
 
@@ -773,3 +774,35 @@ abrir/calcular 12 meses, expandir/recolher seções e aplicar a
 correção; não pode haver exceções de `GlobalKey` ou
 `_dependents.isEmpty`. Reabrir a tela **sem** botão de salvar
 e conferir todas as posições e os MPPTs remapeados.
+
+## Persistência da correção óptica aplicada (08/11/2026)
+
+A causa da perda ao reabrir o editor era a limpeza incondicional de
+`widget.project.opticalCorrection` ao navegar, além da ausência de
+arquivo para os fatores mensais. O problema foi corrigido em dois pontos:
+
+1. **Abrir e fechar o 3D sem modificar nada** preserva os fatores
+   ópticos e a geração ajustada.
+2. **Aplicar correção** confirma a auditoria e os 12 meses, força
+   a gravação da cena em `scene-<hash>.json` e persiste um
+   `optical-<hash>.json` local vinculado à mesma cena.
+3. A persistência óptica inclui o ano UTC, a assinatura dos
+   equipamentos/arranjos/HSP, contagem de módulos e, para cada
+   **inversor e MPPT**, potência, HSP de referência e 12 fatores.
+4. Ao abrir novamente o projeto, restaura os valores **sem consultar
+   novamente a API HSP**, desde que o projeto ainda possua os mesmos
+   sistemas e HSP de referência, a cena seja idêntica e os MPPTs
+   mantenham a contagem de placas esperada.
+5. Qualquer modificação de geometria, MPPT, string ou visibilidade
+   limpa a correção antiga; o próximo ajuste exige novo cálculo dos
+   12 meses. **Remover correção** apaga apenas os fatores.
+   **Resetar Análise 3D** elimina também a cena.
+
+O arquivo salvo não representa engenharia elétrica homologada
+(curvas I–V, diodos bypass, mismatch ou perdas DC/AC).
+
+**Regressão:** aplicar, voltar, abrir 3D de novo e voltar sem
+alterar nada (geração igual); reabrir um projeto com os mesmos
+sistemas (restaura); alterar MPPT e sair (invalida fatores, preserva
+cena); remover correção (mantém obstáculos); invalidar projeto
+por alteração de arranjos/HSP (recusa o arquivo).
