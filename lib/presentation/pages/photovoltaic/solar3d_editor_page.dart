@@ -21,6 +21,7 @@ import '../../../domain/solar3d/solar3d_sun_position.dart';
 import '../../widgets/photovoltaic/solar3d_scene_painter.dart';
 import '../../widgets/photovoltaic/solar3d_touch_surface.dart';
 import '../../widgets/photovoltaic/solar3d_camera_controls.dart';
+import '../../widgets/photovoltaic/solar3d_obstacle_numeric_dialog.dart';
 import '../../widgets/photovoltaic/solar3d_object_picker.dart';
 
 /// New opt-in scene editor. The legacy HSP calculation and SolarSystem remain
@@ -411,24 +412,56 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     ));
   }
 
-  void _addObstacle() {
+  Future<void> _addObstacle() async {
     final doc = document!;
     if (doc.scene.objects.length >= 100) {
       _notice('Limite de 100 objetos no cenário inicial');
       return;
     }
-    final item = Solar3dObject(
+    final draft = Solar3dObject(
       id: 'obstacle-${DateTime.now().microsecondsSinceEpoch}',
       kind: Solar3dObjectKind.obstacle,
       center: const Solar3dVector(0, 1.5, 0),
       width: 2, depth: 2, height: 3,
     );
-    final grounded = Solar3dObstacleHeight.withBase(item, 0);
-    _changeDocument(Solar3dSceneDocument(
-      scene: Solar3dScene([...doc.scene.objects, grounded]),
-      hiddenIds: doc.hiddenIds, excludedIds: doc.excludedIds,
-    ));
-    setState(() => selectedId = item.id);
+    final configured = await showDialog<Solar3dObject>(
+      context: context,
+      builder: (_) => Solar3dObstacleNumericDialog(
+        obstacle: Solar3dObstacleHeight.withBase(draft, 0),
+        creating: true,
+      ),
+    );
+    if (!mounted || configured == null) return;
+    final latest = document!;
+    if (latest.scene.objects.length >= 100) {
+      _notice('Limite de 100 objetos no cenário inicial');
+      return;
+    }
+    try {
+      _changeDocument(Solar3dSceneDocument(
+        scene: Solar3dScene([...latest.scene.objects, configured]),
+        hiddenIds: latest.hiddenIds, excludedIds: latest.excludedIds,
+      ));
+      setState(() => selectedId = configured.id);
+    } on FormatException catch (error) {
+      _notice(error.message);
+    }
+  }
+
+  Future<void> _editObstacleNumerically() async {
+    final current = selected;
+    if (current == null ||
+        current.kind == Solar3dObjectKind.panel) return;
+    final edited = await showDialog<Solar3dObject>(
+      context: context,
+      builder: (_) => Solar3dObstacleNumericDialog(obstacle: current),
+    );
+    if (!mounted || edited == null) return;
+    try {
+      _replace(edited);
+    } on FormatException catch (error) {
+      _notice(error.message);
+    }
   }
 
   void _deleteObstacle() {
@@ -1541,9 +1574,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             ],
           ],
           OutlinedButton.icon(
-            onPressed: _editPosition,
-            icon: const Icon(Icons.edit_location_alt_outlined),
-            label: const Text('Editar coordenadas X / Z / Y'),
+            onPressed: current.kind == Solar3dObjectKind.panel
+                ? _editPosition : _editObstacleNumerically,
+            icon: const Icon(Icons.edit_note_outlined),
+            label: Text(current.kind == Solar3dObjectKind.panel
+                ? 'Editar coordenadas X / Z / Y'
+                : 'Digitar medidas e posição do obstáculo'),
           ),
           Text('Azimute do objeto: ${current.azimuthDegrees.toStringAsFixed(0)}°'),
           Slider(
@@ -1567,20 +1603,23 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           ] else ...[
             Text('Largura: ${current.width.toStringAsFixed(2)} m'),
             Slider(
-              value: current.width.clamp(0.2, 20.0).toDouble(),
-              min: 0.2, max: 20,
+              value: current.width,
+              min: math.min(0.2, current.width),
+              max: math.max(20.0, current.width),
               onChanged: (v) => _replace(current.copyWith(width: v)),
             ),
             Text('Profundidade: ${current.depth.toStringAsFixed(2)} m'),
             Slider(
-              value: current.depth.clamp(0.2, 20.0).toDouble(),
-              min: 0.2, max: 20,
+              value: current.depth,
+              min: math.min(0.2, current.depth),
+              max: math.max(20.0, current.depth),
               onChanged: (v) => _replace(current.copyWith(depth: v)),
             ),
             Text('Altura do obstáculo: ${current.height.toStringAsFixed(2)} m'),
             Slider(
-              value: current.height.clamp(0.2, 20.0).toDouble(),
-              min: 0.2, max: 20,
+              value: current.height,
+              min: math.min(0.2, current.height),
+              max: math.max(20.0, current.height),
               onChanged: (v) {
                 try {
                   _replace(Solar3dObstacleHeight.withHeight(current, v));

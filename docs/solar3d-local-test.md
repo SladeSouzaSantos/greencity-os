@@ -613,3 +613,25 @@ inclinar com ↑/↓, zoom +/−, salvar/reabrir e executar HSP.
   objetos. A altura mínima da viewport 3D passa a 390 px para impedir
   que controles de orientação e deslocamento se sobreponham em
   celulares de tela menor.
+
+## Digitação das medidas e coordenadas dos obstáculos
+
+Ao tocar em **Adicionar obstáculo**, o editor abre um diálogo
+numérico com X (leste/oeste), Z (norte/sul), altura da **base** Y,
+largura, profundidade, altura **total** e azimute. Cancelar não adiciona
+um objeto temporário à cena. Ao selecionar um obstáculo salvo, o botão
+**Digitar medidas e posição do obstáculo** reabre o mesmo editor.
+
+- Valores podem ser digitados com vírgula ou ponto decimal;
+  coordenadas X/Z admitem sinal.
+- A cena só é atualizada após validação **atômica de todos os campos**;
+  valores inválidos não deixam parte do objeto modificada.
+- Altura da base `0 m` deixa a face inferior no solo.
+  Após alterar altura total, `centroY = base + alturaTotal / 2`.
+- Largura, profundidade e altura devem ser positivas, até 1.000 m;
+  X/Z limitados a ±500 m; a base e o centro resultante devem
+  respeitar os limites geométricos.
+- O formulário preserva o ID e o tipo do objeto, e mantém o formato
+  de persistência JSON v1. Os sliders permanecem disponíveis como
+  controle rápido, inclusive para medidas fora do alcance inicial de
+  20 m (expansão dinâmica do controle).
