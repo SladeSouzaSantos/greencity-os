@@ -1332,7 +1332,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     final east = start.x + dx, north = start.z + dz;
     if (east.abs() > 500 || north.abs() > 500) return;
     if ((east - current.center.x).abs() < .0001 &&
-        (north - current.center.z).abs() < .0001) return;
+        (north - current.center.z).abs() < .0001) {
+      return;
+    }
     _replace(current.copyWith(center: Solar3dVector(east, start.y, north)));
   }
 
