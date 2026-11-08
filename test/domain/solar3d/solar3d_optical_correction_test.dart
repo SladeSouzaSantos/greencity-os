@@ -233,6 +233,99 @@ void main() {
     expect(array.mpptIndex, 1); // Physical wiring unchanged.
   });
 
+  test('Três microinversores: quatro placas por arranjo e MPPTs isolados',
+      () {
+    final sample = systems().single;
+    final module = sample.arrays.first.solarScenario.module;
+    final microinverter = Inverter(
+      manufacturer: 'MICRO', modelName: 'MI-2MPPT',
+      inverterType: InverterType.micro, isHybrid: false,
+      nominalPowerKw: 2, maxInputPowerKw: 2.5,
+      maxEfficiency: .97, euroEfficiency: .96, mpptCount: 2,
+      maxInputVoltage: 100, nominalVoltageDc: 50,
+      startVoltage: 20, minMpptVoltage: 20, maxMpptVoltage: 90,
+      maxInputCurrentPerMppt: 20, maxShortCircuitCurrent: 30,
+      gridConnection: GridConnection.monophasic, maxOutputCurrent: 15,
+      nominalVoltageAc: 220, dimensions: '', weight: 5,
+      minOperatingTemp: -20, maxOperatingTemp: 60,
+      protectionDegree: 'IP67',
+    );
+    final three = [
+      for (var i = 1; i <= 3; i++)
+        SolarSystem(
+          id: 'MICRO-$i',
+          name: 'Microinversor $i',
+          inverter: microinverter,
+          arrays: [
+            SolarArray(
+              mpptIndex: 1,
+              solarScenario: SolarScenario(
+                id: 'A-MI-$i', city: 'Natal', state: 'RN',
+                inclination: 15, azimuth: 0,
+                distanceToGround: 1,
+                module: module, quantityPvModule: 4,
+              ),
+              solarScenarioResult: SolarScenarioResult(
+                id: 'A-MI-$i', averageHspReal: 5,
+                monthlyHspReal: List.filled(12, 5),
+                averageHspReference: 5,
+                monthlyHspReference: List.filled(12, 5),
+                shadowLossPercentage: '0.0%',
+              ),
+            ),
+          ],
+        ),
+    ];
+    final original = Solar3dPlanFactory.fromSystems(three);
+    expect(original.objects.length, 12);
+    expect(original.objects.every((p) => p.mpptIndex == 1), true);
+
+    // Reassign panels ONLY inside their own inverter in the 3D study.
+    final edited = Solar3dScene(original.objects.map((panel) {
+      final selectedOtherTracker =
+          panel.id == 'MICRO-1/1/1' ||
+          panel.id == 'MICRO-2/1/1' ||
+          panel.id == 'MICRO-2/1/2';
+      return selectedOtherTracker
+          ? panel.copyWith(mpptIndex: 2) : panel;
+    }).toList());
+    final monthly = {
+      for (var m = 1; m <= 12; m++)
+        m: edited.objects.map((p) {
+          final factor = p.id == 'MICRO-1/1/1' ? .5 :
+              p.id == 'MICRO-2/1/2' ? .8 : 1.0;
+          return PanelMonthlyIrradianceLoss(
+            panelId: p.id, mpptIndex: p.mpptIndex!,
+            stringId: null, monthUtc: m,
+            referenceHsp: 5, correctedHsp: 5 * factor,
+            directLossKwhM2: 0,
+            shadeLossPercent: (1 - factor) * 100,
+          );
+        }).toList(),
+    };
+
+    final correction = Solar3dOpticalCorrection.fromAnalysis(
+      systems: three, scene: edited, monthly: monthly, yearUtc: 2024,
+    );
+    expect(correction.panelCount, 12);
+    expect(correction.groupsBySystemMppt.keys.toSet(),
+        {'MICRO-1', 'MICRO-2', 'MICRO-3'});
+    expect(correction.groupsBySystemMppt['MICRO-1']![1]!.moduleCount, 3);
+    expect(correction.groupsBySystemMppt['MICRO-1']![2]!.moduleCount, 1);
+    expect(correction.groupsBySystemMppt['MICRO-2']![1]!.moduleCount, 2);
+    expect(correction.groupsBySystemMppt['MICRO-2']![2]!.moduleCount, 2);
+    expect(correction.groupsBySystemMppt['MICRO-3']![1]!.moduleCount, 4);
+    expect(correction.groupsBySystemMppt['MICRO-3']!.containsKey(2), false);
+    expect(correction.retention('MICRO-1', 2, 0), closeTo(.5, 1e-9));
+    expect(correction.retention('MICRO-2', 2, 0), closeTo(.9, 1e-9));
+    expect(correction.retention('MICRO-3', 1, 0), 1);
+    for (final inverter in three) {
+      expect(inverter.arrays.single.mpptIndex, 1);
+    }
+    // This verifies grouping only. Actual electrical compatibility of
+    // microinverter channels/strings still depends on device specifications.
+  });
+
   test('Dois inversores com MPPT 1 ficam isolados no modelo e na geração', () {
     final one = systems().first;
     final two = SolarSystem(
