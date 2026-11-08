@@ -178,6 +178,54 @@ void main() {
     expect(list.first.arrays.first.mpptIndex, 1);
   });
 
+  test('Quatro placas cadastradas juntas admitem divisão 3+1 em MPPTs', () {
+    final template = systems().first;
+    final baseScenario = template.arrays.first.solarScenario;
+    final array = SolarArray(
+      mpptIndex: 1,
+      solarScenario: SolarScenario(
+        id: 'QUATRO', city: 'Natal', state: 'RN',
+        inclination: baseScenario.inclination,
+        azimuth: baseScenario.azimuth,
+        distanceToGround: baseScenario.distanceToGround,
+        module: baseScenario.module,
+        quantityPvModule: 4,
+      ),
+      solarScenarioResult: SolarScenarioResult(
+        id: 'QUATRO', averageHspReal: 5,
+        monthlyHspReal: List.filled(12, 5),
+        averageHspReference: 5,
+        monthlyHspReference: List.filled(12, 5),
+        shadowLossPercentage: '0.0%',
+      ),
+    );
+    final list = [SolarSystem(
+      id: 'QUATRO-SYS', name: 'Inversor único',
+      inverter: template.inverter, arrays: [array],
+    )];
+    final scene = Solar3dPlanFactory.fromSystems(list);
+    expect(scene.objects.length, 4);
+    final remapped = Solar3dScene(scene.objects.map((o) =>
+      o.id == 'QUATRO-SYS/1/4' ? o.copyWith(mpptIndex: 2) : o).toList());
+    final monthly = {
+      for (var month = 1; month <= 12; month++)
+        month: remapped.objects.map((o) =>
+          PanelMonthlyIrradianceLoss(
+            panelId: o.id, mpptIndex: o.mpptIndex!,
+            stringId: null, monthUtc: month,
+            referenceHsp: 5, correctedHsp: o.mpptIndex == 2 ? 4 : 5,
+            directLossKwhM2: 0, shadeLossPercent: o.mpptIndex == 2 ? 20 : 0,
+          )).toList(),
+    };
+    final optical = Solar3dOpticalCorrection.fromAnalysis(
+      systems: list, scene: remapped, monthly: monthly, yearUtc: 2023);
+    expect(optical.groupsBySystemMppt['QUATRO-SYS']![1]!.moduleCount, 3);
+    expect(optical.groupsBySystemMppt['QUATRO-SYS']![2]!.moduleCount, 1);
+    expect(optical.groupsBySystemMppt['QUATRO-SYS']![1]!.powerWp, 1500);
+    expect(optical.groupsBySystemMppt['QUATRO-SYS']![2]!.powerWp, 500);
+    expect(array.mpptIndex, 1); // Physical wiring unchanged.
+  });
+
   test('Dois inversores com MPPT 1 ficam isolados no modelo e na geração', () {
     final one = systems().first;
     final two = SolarSystem(
