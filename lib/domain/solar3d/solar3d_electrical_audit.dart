@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import '../entities/inverter.dart';
 import '../entities/pv_module.dart';
 import '../entities/solar_system.dart';
 import 'solar3d_geometric_shading.dart';
