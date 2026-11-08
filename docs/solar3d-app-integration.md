@@ -1,23 +1,43 @@
-# Planejamento de cena 3D GreenCity OS
+# Solar 3D — integração no GreenCity OS
 
-`Solar3dPlanFactory` expande cada `SolarScenario.quantityPvModule` em
-placas físicas com IDs distintos e MPPT herdado do `SolarArray`, usando
-os modelos de módulos e inversores do Isar. As coordenadas iniciais são
-**apenas uma grade provisória**; o projeto não possui medições do telhado.
-O identificador `stringId` permanece `null`: a estrutura atual do
-GreenCity OS não representa strings individuais.
+**Revisão:** 08/11/2026 · [PR #14](https://github.com/SladeSouzaSantos/greencity-os/pull/14).
 
-`SolarResourceHourlyDataSource` implementa um cliente Dio opt-in para
-`/api/recurso-solar/horario` e valida séries UTC, sem obstáculos e sem
-estimativa elétrica. O fluxo existente continua usando
-`/api/calcular-arranjo`; nenhuma nova chamada é ativada antes do
-deploy da API correspondente.
+## Contratos implementados
 
-O motor `Solar3dGeometricShading` aplica máscaras geométricas ao POA
-**direto** por placa/horário e calcula HSP/percentual de perda de
-irradiância. Não estima desempenho elétrico de strings ou MPPTs.
+- `Solar3dPlanFactory` expande arrays Isar em placas com IDs estáveis
+  por projeto e MPPT inicial. As posições iniciais são **ilustrativas**.
+- `Solar3dEditorPage` oferece prévia 3D nativa Flutter, câmera,
+  percurso solar, sombras geométricas por placa, obstáculos, edição
+  X/Z/Y, strings/MPPTs de estudo e arquivos locais JSON v1.
+  O editor WebGL/Three.js do HSP ainda **não** é embutido no app.
+- **Alturas na UI:** módulo pela borda inferior; obstáculo pela base,
+  com `0 m` no solo. Ambos são convertidos para centro geométrico
+  para persistir sem alterar o formato JSON ou o raycasting.
+- `SolarResourceHourlyDataSource` usa a API HSP opt-in
+  `POST /api/recurso-solar/horario`; implantada e verificada em
+  **DEV**, não confirmada em produção. A rota convencional
+  `/api/calcular-arranjo` continua independente.
+- `Solar3dGeometricShading` aplica máscara à irradiância **direta**
+  e preserva parcelas difusa e refletida.
+- `Solar3dOpticalCorrection` agrupa por `systemId/mpptIndex` e
+  permite aplicar/reverter uma estimativa óptica na sessão após os
+  12 meses completos. A atribuição MPPT de estudo não altera
+  `SolarArray.mpptIndex` e não persiste topologia física.
+- `Solar3dElectricalAudit` verifica limites STC por string/MPPT:
+  `Imp` operacional excedido gera aviso, `Isc` absoluto excedido
+  gera bloqueio. Não modela curvas I–V, bypass ou perdas elétricas.
 
-Pendências para o editor WebGL: salvar posições persistentes, cadastrar
-obstáculos, atribuir strings reais e validar a plataforma Windows/Android.
-Para energia por MPPT, calibrar curvas de equipamento e usar perfis
-temporais; não agregar percentuais mensais ópticos como perda elétrica.
+## Gates e dependências
+
+A PR #14 entrega exclusivamente o **MVP óptico**. Não usar o
+percentual de HSP sombreado como perda de potência DC/AC.
+Não transferir automaticamente ao fluxo HSP convencional os
+obstáculos do estudo 3D — isso duplicaria a perda.
+A release deve validar endpoint HSP do ambiente de destino e
+smoke Android físico ou aceitar explicitamente esse risco.
+
+- [Status, evidências e checklist do merge](solar3d-release-readiness.md)
+- [Guia de testes](solar3d-local-test.md)
+- [Riscos/contrato elétrico](solar3d-electrical-homologation.md)
+- [#15: WebGL/persistência real](https://github.com/SladeSouzaSantos/greencity-os/issues/15)
+- [#16: epic elétrica, fases #17–#19](https://github.com/SladeSouzaSantos/greencity-os/issues/16)

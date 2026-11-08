@@ -3,7 +3,8 @@
 ## Estado atual
 
 - [HSP Simulator PR #7](https://github.com/SladeSouzaSantos/hsp_simulator/pull/7):
-  `feature/hourly-resource-api`, fornece `POST /recurso-solar/horario`.
+  integrada a `dev`, fornece `POST /recurso-solar/horario`
+  e já passou no deploy/healthcheck em DEV.
 - [GreenCity OS PR #14](https://github.com/SladeSouzaSantos/greencity-os/pull/14):
   `feature/solar3d-shading-analysis`, inclui uma **prévia tridimensional
   nativa Flutter** via `CustomPainter`, com posições, obstáculos,
@@ -12,9 +13,11 @@
   preserva o protótipo Three.js do laboratório **separadamente**;
   nesta etapa o Flutter não embute o editor Three.js. A compatibilidade
   WebGL (Windows/Android) será estudada antes de substituí-lo.
-- Nada foi integrado a `main` ou publicado no servidor. O novo endpoint
-  precisa rodar localmente ou ser homologado em DEV antes da consulta
-  do GreenCity OS.
+- GreenCity OS PR #14 ainda não foi integrado a `main`. A nova API HSP
+  está implantada em **DEV** (pipeline #42438742622 aprovado), mas
+  não está comprovada em produção; usar API local/DEV durante testes.
+  CI GreenCity #42441894386 aprovado e Windows homologado pelo
+  relato do usuário. Android físico ainda pendente.
 
 ## 1. Inicializar a nova API HSP em Windows (PowerShell)
 
@@ -22,7 +25,7 @@
 git clone https://github.com/SladeSouzaSantos/hsp_simulator.git
 cd hsp_simulator
 git fetch origin
-git switch feature/hourly-resource-api
+git switch dev
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
@@ -280,7 +283,7 @@ outro PowerShell na pasta do repositório HSP Simulator:
 
 ```powershell
 git fetch origin
-git switch feature/hourly-resource-api
+git switch dev
 git pull --ff-only
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1

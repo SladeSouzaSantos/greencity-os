@@ -12,9 +12,40 @@ próximo da lista, de forma sequencial. Confirme a gratuidade e limites
 da sua conta antes de habilitar cada API.
 
 **Novo Dimensionamento:** ao adicionar módulos a um inversor, o campo
-**Altura do centro do módulo (m)** começa em **0.15 m** (15 cm).
+**Altura da borda inferior ao solo (m)** começa em **0,15 m** (15 cm).
 É apenas o valor inicial editável do formulário; cenários existentes
 não são alterados.
+
+## Análise Solar 3D — entrega óptica experimental
+
+O editor `Solar3dEditorPage` da [PR #14](https://github.com/SladeSouzaSantos/greencity-os/pull/14)
+é uma prévia 3D nativa Flutter (Windows e Android), com obstáculos,
+trajetória do sol, sombreamento direto por placa, atribuições de MPPT
+**hipotéticas** e auditoria preliminar de strings. É possível calcular
+12 meses de HSP horário e aplicar/remover uma correção **somente óptica**
+na geração estimada da sessão. O orçamento e as ligações elétricas
+originais não são reconfigurados automaticamente.
+
+A altura da **borda inferior** é usada para placas, e a altura da
+**base** para obstáculos (`0 m` = solo); a geometria/raycast utiliza
+internamente a altura do centro. `Imp` acima do limite operacional é
+aviso de possível clipping; `Isc` acima do limite de curto-circuito
+é bloqueio. Não se trata de cálculo DC/AC validado.
+
+O endpoint `POST /api/recurso-solar/horario` foi verificado no
+HSP **DEV**, mas não se deve presumir disponibilidade em produção.
+O usuário escolhe a URL na tela 3D, ou inicia o HSP local.
+
+**Homologação:** CI Flutter + Windows + Android aprovado no SHA
+`87138b97`; smoke Windows reportado pelo usuário; Android físico
+ainda não validado. O merge permanece condicionado à revisão do escopo,
+à decisão sobre o endpoint HSP e ao gate Android.
+
+Documentos: [release-readiness](docs/solar3d-release-readiness.md),
+[integração](docs/solar3d-app-integration.md),
+[runbook](docs/solar3d-local-test.md) e
+[homologação elétrica](docs/solar3d-electrical-homologation.md).
+A modelagem I–V/bypass/DC/AC fica em [fase separada #16](https://github.com/SladeSouzaSantos/greencity-os/issues/16).
 
 ## Estrutura de Pasta do Projeto
 
@@ -203,12 +234,13 @@ revisão do **PDF selecionado**, nunca substituir seus dados pelos gabaritos.
 
 Em **Novo Dimensionamento**, crie um sistema com inversor e selecione
 **Adicionar módulos a este inversor**. No formulário **Novo Cenário**,
-o campo **Altura do centro do módulo (m)** inicia em `0.15` (metros).
-O usuário pode editar a altura antes de criar o cenário; o valor é
-validado por `HspInputValidator.validateModuleCenterHeight` e enviado
-ao cálculo HSP como `distanceToGround`. Esta mudança afeta apenas o
-valor pré-preenchido, não altera cenários preexistentes nem a altura
-do obstáculo de sombreamento.
+o campo **Altura da borda inferior ao solo (m)** inicia em `0.15` (metros).
+Essa medida é a distância vertical do ponto mais baixo da placa ao
+terreno. O formulário converte para a altura do **centro geométrico**
+antes de enviar `SolarScenario.distanceToGround` e
+`distancia_centro_modulo_chao` ao HSP; as alturas de cenas antigas
+não são reinterpretadas automaticamente. O editor Solar 3D usa a
+**base do obstáculo** em Y: `0 m` significa apoiado no solo.
 
 Para testes no Android, execute `flutter devices` e
 `flutter run -d <ID_DO_DISPOSITIVO>`. As APIs Gemini e OpenRouter

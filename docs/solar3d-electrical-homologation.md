@@ -2,9 +2,11 @@
 
 **Revisão:** 08/11/2026
 **Branch:** `feature/solar3d-shading-analysis`
-**Status:** pré-homologação automatizada; **não é homologação elétrica de projeto
-para instalação**. Não promover resultados experimentais a propostas com
-geração AC garantida. PR #14 permanece draft, sem merge.
+**Status:** MVP **óptico** aprovado no CI e reportado como funcional
+pelo usuário no Windows; **não é homologação elétrica para instalação**.
+PR #14 em preparação para revisão, sem merge em `main`. O smoke Android
+físico e a validação do endpoint HSP no ambiente final ainda faltam.
+Não apresentar geração AC experimental como garantida.
 
 ## 1. Contrato das três etapas
 
@@ -83,12 +85,14 @@ ou usada como previsão AC de projeto executável.
 - [x] Múltiplos inversores podem ter a mesma ID de string sem
   interconexão acidental.
 - [x] Flutter Analyze + testes rodados em Linux no CI.
-- [x] Compilação e testes Windows no CI: aprovadas no SHA `f688dcc5`.
-- [x] Compilação APK Android no CI: aprovada no SHA `f688dcc5`,
-  com manifesto Isar compatibilizado.
-- [ ] Smoke manual Windows em hardware real para salvar/resetar/analisar
-  com tela grande e arrasto/zoom.
-- [ ] Smoke manual Android (toque, pinça, persistência, desempenho).
+- [x] Último CI para o código óptico, SHA `87138b97`: `flutter-checks`,
+  `Windows desktop build and tests` e `Android debug APK build`
+  aprovados no [run #42441894386](https://github.com/SladeSouzaSantos/greencity-os/actions/runs/42441894386).
+- [x] Smoke Windows: usuário confirmou funcionalidade em 08/11/2026
+  (relato manual, sem instrumentação automatizada).
+- [x] HSP DEV: [build/deploy/endpoint #42438742622](https://github.com/SladeSouzaSantos/hsp_simulator/actions/runs/42438742622) aprovado.
+- [ ] Smoke manual Android físico (toque, pinça, persistência, desempenho).
+- [ ] Publicação/verificação explícita do endpoint HSP no destino final.
 - [ ] Benchmark de motor elétrico calibrado versus PVsyst/ensaios e
   medição de sombreamento real (não disponível).
 
@@ -128,11 +132,12 @@ ou usada como previsão AC de projeto executável.
   e Windows. A UI nativa Flutter é funcional, mas a paridade com o
   laboratório web permanece issue #15.
 
-**Decisão de release:** manter PR #14 em draft até aprovação manual
-do smoke Windows/Android, build Windows, e fechamento do escopo
-**óptico**. A fase **elétrica** permanece identificada separadamente
-na issue #16; nenhuma perda elétrica não validada será embutida
-automaticamente na geração estimada.
+**Decisão de release:** consolidar o MVP óptico e preparar a PR #14
+para revisão, **sem merge automático** até resolver o gate Android
+e o destino HSP. A fase elétrica permanece separada em #16,
+com #17 curvas I–V, #18 bypass e #19 DC/AC. Nenhuma perda elétrica
+não validada deve ser embutida na geração óptica.
+Ver [checklist de release](solar3d-release-readiness.md).
 
 ## Correção de referência de altura e strings sugeridas (08/11/2026)
 
@@ -148,7 +153,7 @@ de simulação. `Solar3dStudyStringSuggestions` propõe apenas
 posterior da auditoria. Nenhuma recomendação automática estabelece
 o número real de strings do sistema.
 
-## Compatibilidade Isar/Android — correção em homologação
+## Compatibilidade Isar/Android — build aprovado; smoke físico pendente
 
 O Android Gradle Plugin exige namespace explícito e não aceita mais o
 atributo `package` dentro do manifesto de bibliotecas. O Isar 3.1.0+1

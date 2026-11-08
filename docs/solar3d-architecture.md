@@ -23,19 +23,23 @@ NÃO calcula perdas DC/AC por sombreamento e não certifica circuito.
   de perda de irradiância da placa, ponderado pelas horas e irradiância.
   Não é motor elétrico; não atribui perdas de string/MPPT pela média dos
   HSPs individuais.
-- Um mesmo modelo de catálogo pode aparecer em várias placas físicas,
-  cada uma com posição e ligação próprias. **Modelo Isar e quantidades de
-  cenário não equivalem a IDs individuais.** A futura UI deverá expandir
-  cada quantidade em `PanelPlacement` e preservar um ID persistente.
-- A nova rota de recurso solar **não está em produção**. Não chamar sem
-  que o backend HSP seja homologado/deployado. O aplicativo atual
-  continua consumindo `/api/calcular-arranjo`.
+- Um mesmo modelo de catálogo pode aparecer em várias placas físicas
+  com IDs de cena independentes: `Solar3dPlanFactory` já expande
+  quantidades em placas individuais e a persistência JSON reconcilia
+  seus IDs com o catálogo Isar. A atribuição de string é **de estudo**,
+  não um circuito real aprovado.
+- A UI refere-se à **borda inferior** da placa e à **base** do
+  obstáculo. O motor geométrico mantém o **centro** internamente,
+  preservando o formato JSON de cenas antigas.
+- A nova rota horária está **implantada e verificada em HSP DEV**,
+  mas não está comprovada em produção. A aplicação principal mantém
+  a chamada convencional `/api/calcular-arranjo` sem mudanças.
 
-**Fases seguintes:** criar tela 3D WebGL compartilhada com Solar 3D Lab,
-fazer persistência da cena e das atribuições explícitas placa/string/MPPT,
-transferir perfil temporal para motor de cálculo elétrico com datasheet
-validado, e comparar cenários por MPPT. Não confundir o percentual de
-perda HSP por placa com o percentual de perda de energia DC/AC por MPPT.
+**Fases seguintes independentes:** WebGL/Three.js e persistência
+do circuito físico (issue #15) e modelagem elétrica calibrada I–V,
+bypass e DC/AC (epic #16, subissues #17–#19). Não confundir perda
+óptica HSP com perda elétrica de energia por MPPT.
+Ver [checklist de integração](solar3d-release-readiness.md).
 
 O limite de trabalho síncrono é deliberado para evitar travar a UI;
 uma produção anual com dezenas de painéis exigirá processamento em
