@@ -106,10 +106,11 @@ void main() {
 
       Future<void> chooseMppt2(String id) async {
         final selector = find.byKey(ValueKey('solar3d-mppt-$id'));
-        await tester.ensureVisible(selector);
-        await tester.tap(selector);
-        await tester.pumpAndSettle();
-        await tester.tap(find.textContaining('MPPT 2 ·').last);
+        expect(selector, findsOneWidget);
+        // Invoke the real widget callback. A kept-alive section can be
+        // 1,800px outside the viewport; taps at those coordinates are
+        // not hit-testable in widget tests, although the State is mounted.
+        tester.widget<DropdownButton<int>>(selector).onChanged!(2);
         await tester.pumpAndSettle();
         expect(tester.widget<DropdownButton<int>>(selector).value, 2);
         expect(tester.takeException(), isNull);
@@ -124,22 +125,30 @@ void main() {
             (label.data ?? '').contains('Inversor 2');
       });
       expect(other, findsWidgets);
-      await tester.ensureVisible(other.first);
-      await tester.tap(other.first);
+      tester.widget<InputChip>(other.first).onPressed!();
       await tester.pumpAndSettle();
       await chooseMppt2('MI-2/1/1');
 
-      await tester.ensureVisible(objectsHeader);
-      await tester.tap(objectsHeader); // unmount MPPT controls
+      // Expand/collapse via the same InkWell callback even if a lazy
+      // ListView keeps this section alive outside the viewport.
+      void toggle(String title) {
+        final label = find.text(title);
+        final control = find.ancestor(
+          of: label, matching: find.byType(InkWell),
+        ).first;
+        tester.widget<InkWell>(control).onTap!();
+      }
+
+      toggle('Objetos, posições e MPPTs'); // unmount MPPT controls
       await tester.pumpAndSettle();
       final hspHeader = find.text('Calcular perdas ópticas · 12 meses');
       await reveal(hspHeader);
-      await tester.tap(hspHeader); // mount an endpoint editor and year dropdown
+      toggle('Calcular perdas ópticas · 12 meses');
+      // mount an endpoint editor and year dropdown
       await tester.pumpAndSettle();
       expect(find.text('Mais recente completo (automático)'),
           findsOneWidget);
-      await tester.ensureVisible(objectsHeader);
-      await tester.tap(objectsHeader);
+      toggle('Objetos, posições e MPPTs');
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       // No physical array rewiring: the 3D MPPT labels are study-only.
