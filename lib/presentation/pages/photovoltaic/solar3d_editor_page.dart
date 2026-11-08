@@ -644,7 +644,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             'por MPPT sobre a base HSP dos módulos.\n\n'
             'As conexões físicas originais NÃO serão alteradas. '
             'A geração estimada pode mudar pela nova distribuição '
-            'hipotética dos MPPTs além da sombra.\n\n'
+            'hipotética dos MPPTs além da sombra. '
+            'A cena de estudo será salva localmente no dispositivo.\n\n'
             'ATENÇÃO: É uma estimativa experimental de irradiância; '
             'não modela eletricamente strings, bypass nem mismatch '
             'sob sombras parciais. Não representa geração AC '
@@ -665,11 +666,18 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         ),
       );
       if (!mounted || confirm != true) return;
+      // Applying the scenario also persists its geometry and per-panel
+      // assignment locally; otherwise reopening the editor would restore
+      // the previous layout even while the session uses the new ratios.
+      await storage!.save(doc);
+      if (!mounted) return;
       Navigator.pop(context, correction);
     } on FormatException catch (error) {
       _notice(error.message);
     } on StateError catch (error) {
       _notice(error.message);
+    } catch (error) {
+      _notice('Não foi possível salvar o cenário 3D: $error');
     }
   }
 
