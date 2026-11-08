@@ -239,7 +239,7 @@ void main() {
     final module = sample.arrays.first.solarScenario.module;
     final microinverter = Inverter(
       manufacturer: 'MICRO', modelName: 'MI-2MPPT',
-      inverterType: InverterType.micro, isHybrid: false,
+      inverterType: InverterType.microInverter, isHybrid: false,
       nominalPowerKw: 2, maxInputPowerKw: 2.5,
       maxEfficiency: .97, euroEfficiency: .96, mpptCount: 2,
       maxInputVoltage: 100, nominalVoltageDc: 50,
