@@ -957,7 +957,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                   f.code == "MPPT_CURRENT_LIMIT")
                 ? "AVISO: Imp excede o máximo operacional em um ou mais "
                   "MPPTs. O clipping de corrente não foi estimado. "
-                  "Confirme a compatibilidade com o fabricante.\\n\\n"
+                  "Confirme a compatibilidade com o fabricante.\n\n"
                 : ""}'
             'As conexões físicas originais NÃO serão alteradas. '
             'A geração estimada pode mudar pela nova distribuição '
