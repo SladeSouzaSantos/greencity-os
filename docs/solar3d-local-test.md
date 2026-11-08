@@ -806,3 +806,24 @@ alterar nada (geração igual); reabrir um projeto com os mesmos
 sistemas (restaura); alterar MPPT e sair (invalida fatores, preserva
 cena); remover correção (mantém obstáculos); invalidar projeto
 por alteração de arranjos/HSP (recusa o arquivo).
+
+## Regressão: listas editáveis na criação de inversores (08/11/2026)
+
+Depois da restauração de correção óptica, `SolarProjectDesignerPage.initState`
+passou a atribuir a lista `project.systems` diretamente a `systems`.
+Um projeto recém-criado tinha `SolarProject.systems = const []`, portanto
+a ação **CRIAR SISTEMA** falhava com `Unsupported operation: Cannot add to
+an unmodifiable list`. O mesmo risco existia para
+`SolarSystem.arrays = const []` no primeiro arranjo.
+
+A página agora usa `List<SolarSystem>.of(project.systems)` e mantém
+`project.systems` sincronizado ao adicionar um inversor. Os construtores
+de `SolarProject` e `SolarSystem` também copiam as listas fornecidas,
+de modo que seus agregados editáveis nunca mantenham uma lista
+`const` ou `List.unmodifiable` recebida como argumento.
+
+**Teste manual:** criar um novo projeto → adicionar inversor →
+adicionar primeiro arranjo → adicionar segundo inversor →
+abrir Análise 3D → voltar. Não deve ocorrer `Unsupported operation`.
+A troca de inversores/arranjos invalida qualquer correção óptica
+anterior incompatível, mas não interfere com o armazenamento da cena.
