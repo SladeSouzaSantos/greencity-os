@@ -23,6 +23,8 @@ import '../../widgets/photovoltaic/solar3d_touch_surface.dart';
 import '../../widgets/photovoltaic/solar3d_camera_controls.dart';
 import '../../widgets/photovoltaic/solar3d_obstacle_numeric_dialog.dart';
 import '../../widgets/photovoltaic/solar3d_position_dialog.dart';
+import '../../widgets/photovoltaic/solar3d_bulk_move_dialog.dart';
+import '../../../domain/solar3d/solar3d_bulk_move.dart';
 import '../../widgets/photovoltaic/solar3d_collapsible_section.dart';
 import '../../widgets/photovoltaic/solar3d_object_picker.dart';
 
@@ -104,6 +106,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Solar3dScene? cameraFrameScene;
   Solar3dScene? catalogInitialScene;
   String? draggingId;
+  Solar3dScene? dragStartScene;
+  bool multiSelectMode = false;
+  final Set<String> selectedIds = {};
   Solar3dVector? dragStartCenter;
   Solar3dVector? dragStartWorld;
   Solar3dProjection? dragProjection;
@@ -314,6 +319,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         cameraFrameScene = base;
         selectedId = base.objects.firstWhere(
           (o) => o.kind == Solar3dObjectKind.panel).id;
+        selectedIds.clear();
+        multiSelectMode = false;
         monthly = {};
         calculatedYearUtc = null;
         electricalAudit = null;
@@ -369,6 +376,62 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       sceneRevision++;
     });
     _scheduleSceneAutosave(next);
+  }
+
+
+  void _setMultiSelect(bool enabled) {
+    _onScaleEnd();
+    setState(() {
+      multiSelectMode = enabled;
+      selectedIds.clear();
+      if (enabled && selectedId != null) selectedIds.add(selectedId!);
+    });
+  }
+
+  void _chooseObject(String id) {
+    _onScaleEnd();
+    setState(() {
+      if (multiSelectMode && !selectedIds.add(id)) {
+        selectedIds.remove(id);
+      }
+      selectedId = id;
+    });
+  }
+
+  void _selectAllObjects() {
+    _onScaleEnd();
+    setState(() {
+      selectedIds
+        ..clear()
+        ..addAll(document!.scene.objects.map((o) => o.id));
+    });
+  }
+
+  Future<void> _moveSelectedNumerically() async {
+    if (busy || !multiSelectMode || selectedIds.isEmpty) return;
+    final request = await showDialog<Solar3dBulkMoveRequest>(
+      context: context,
+      builder: (_) => Solar3dBulkMoveDialog(
+          selectedCount: selectedIds.length),
+    );
+    if (!mounted || request == null) return;
+    final doc = document!;
+    try {
+      final next = Solar3dBulkMove.apply(
+        scene: doc.scene,
+        selectedIds: {...selectedIds},
+        east: request.east, north: request.north,
+        elevation: request.commonHeight ? 0 : request.height,
+        commonHeight: request.commonHeight ? request.height : null,
+      );
+      _changeDocument(Solar3dSceneDocument(
+        scene: next,
+        hiddenIds: doc.hiddenIds,
+        excludedIds: doc.excludedIds,
+      ));
+    } on FormatException catch (error) {
+      _notice(error.message);
+    }
   }
 
   void _replace(Solar3dObject next) {
@@ -557,8 +620,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       hiddenIds: {...doc.hiddenIds}..remove(current.id),
       excludedIds: {...doc.excludedIds}..remove(current.id),
     ));
-    setState(() => selectedId = doc.scene.objects.firstWhere(
-      (o) => o.kind == Solar3dObjectKind.panel).id);
+    setState(() {
+      selectedIds.remove(current.id);
+      selectedId = doc.scene.objects.firstWhere(
+        (o) => o.kind == Solar3dObjectKind.panel).id;
+    });
   }
 
   Future<void> _setString() async {
@@ -1151,14 +1217,23 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   /// Blank canvas does not rotate/pan the camera.
   void _touchStart(Offset local, Size size) {
     _onPanEnd();
+    if (busy) return;
     final view = _projection(size);
     final item = _hitObject(local, view);
     if (item == null) return;
+    if (multiSelectMode && !selectedIds.contains(item.id)) {
+      setState(() {
+        selectedIds.add(item.id);
+        selectedId = item.id;
+      });
+    } else if (selectedId != item.id) {
+      setState(() => selectedId = item.id);
+    }
     draggingId = item.id;
     dragStartCenter = item.center;
     dragProjection = view;
     dragStartWorld = view.pointOnHorizontalPlane(local, item.center.y);
-    if (selectedId != item.id) setState(() => selectedId = item.id);
+    dragStartScene = multiSelectMode ? document!.scene : null;
   }
 
   static double _wrapYaw(double v) =>
@@ -1228,27 +1303,42 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     if (id == null || start == null || anchor == null || projection == null) {
       return;
     }
-    final current = selected;
-    if (current == null || current.id != id) {
-      return;
-    }
     final world = projection.pointOnHorizontalPlane(
       localPosition, start.y);
-    final east = start.x + world.x - anchor.x;
-    final north = start.z + world.z - anchor.z;
-    if (!east.isFinite || !north.isFinite ||
-        east.abs() > 500 || north.abs() > 500) {
+    final dx = world.x - anchor.x, dz = world.z - anchor.z;
+    if (!dx.isFinite || !dz.isFinite) return;
+    if (multiSelectMode && dragStartScene != null) {
+      if (dx.abs() < .0001 && dz.abs() < .0001) return;
+      final doc = document!;
+      try {
+        // The delta always comes from the original snapshot, preventing
+        // drift between objects over successive Android touch frames.
+        final next = Solar3dBulkMove.apply(
+          scene: dragStartScene!,
+          selectedIds: {...selectedIds},
+          east: dx, north: dz,
+        );
+        _changeDocument(Solar3dSceneDocument(
+          scene: next, hiddenIds: doc.hiddenIds,
+          excludedIds: doc.excludedIds,
+        ));
+      } on FormatException {
+        // Move NONE of the objects when even one would cross a limit.
+      }
       return;
     }
+    final current = selected;
+    if (current == null || current.id != id) return;
+    final east = start.x + dx, north = start.z + dz;
+    if (east.abs() > 500 || north.abs() > 500) return;
     if ((east - current.center.x).abs() < .0001 &&
-        (north - current.center.z).abs() < .0001) {
-      return;
-    }
+        (north - current.center.z).abs() < .0001) return;
     _replace(current.copyWith(center: Solar3dVector(east, start.y, north)));
   }
 
   void _onPanEnd() {
     draggingId = null;
+    dragStartScene = null;
     dragStartCenter = null;
     dragStartWorld = null;
     dragProjection = null;
@@ -1370,6 +1460,39 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             ],
           ),
         ),
+        Wrap(spacing: 7, runSpacing: 5,
+          crossAxisAlignment: WrapCrossAlignment.center, children: [
+          FilterChip(
+            avatar: const Icon(Icons.layers_outlined, size: 18),
+            label: const Text('Selecionar vários'),
+            selected: multiSelectMode,
+            onSelected: busy ? null : _setMultiSelect,
+          ),
+          if (multiSelectMode) ...[
+            Text('${selectedIds.length} selecionados',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            OutlinedButton.icon(
+              onPressed: busy ? null : _selectAllObjects,
+              icon: const Icon(Icons.select_all),
+              label: const Text('Todos'),
+            ),
+            OutlinedButton(
+              onPressed: () => setState(() => selectedIds.clear()),
+              child: const Text('Limpar'),
+            ),
+            FilledButton.icon(
+              onPressed: busy || selectedIds.isEmpty
+                  ? null : _moveSelectedNumerically,
+              icon: const Icon(Icons.open_with),
+              label: const Text('Mover / altura'),
+            ),
+          ],
+        ]),
+        if (multiSelectMode)
+          const Text('Toque placas e obstáculos para adicionar ao conjunto. '
+              'Arraste um objeto selecionado para mover todos juntos '
+              'em X/Z, ou use Mover / altura para informar valores '
+              'numéricos. A seleção não altera os MPPTs.'),
         LayoutBuilder(builder: (context, constraints) {
           // Reserve space for camera orientation AND the four-way viewport
           // controls without overlaying each other on compact phones.
@@ -1397,6 +1520,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                         hiddenIds: doc.hiddenIds,
                         excludedIds: doc.excludedIds,
                         selectedId: selectedId,
+                        selectedIds: multiSelectMode
+                            ? {...selectedIds} : const {},
                         yaw: yaw, pitch: pitch, zoom: zoom,
                         cameraPan: cameraPan,
                         showCompass: false,
@@ -1580,13 +1705,25 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                 ? '${item.id.split("/").skip(1).join("/")}'
                   ' · ${_trackerLabel(item)}'
                 : 'Obstáculo ${item.id}'),
-              selected: selectedId == item.id,
-              onPressed: () => setState(() => selectedId = item.id),
+              selected: multiSelectMode
+                  ? selectedIds.contains(item.id) : selectedId == item.id,
+              onPressed: busy ? null : () => _chooseObject(item.id),
               avatar: Icon(item.kind == Solar3dObjectKind.panel
                 ? Icons.solar_power : Icons.domain, size: 16),
             ),
         ]),
-        if (current != null) ...[
+        if (multiSelectMode) ...[
+          const SizedBox(height: 8),
+          Text('Selecionados: ${selectedIds.length} objetos. '
+              'Mova todos pelo visor ou abra os controles abaixo.'),
+          OutlinedButton.icon(
+            onPressed: busy || selectedIds.isEmpty
+                ? null : _moveSelectedNumerically,
+            icon: const Icon(Icons.height),
+            label: const Text('Alterar posição e altura do conjunto'),
+          ),
+        ],
+        if (current != null && !multiSelectMode) ...[
           const SizedBox(height: 9),
           Text('Selecionado: ${current.id}',style: Theme.of(context).textTheme.titleMedium),
           Text('Posição (m): Leste ${current.center.x.toStringAsFixed(2)}, '
