@@ -43,7 +43,7 @@ class Solar3dDiodeCalibration {
     const refK = 298.15;
     final tK = cellTemperatureC + 273.15;
     final ratio = tK / refK;
-    final il = math.max(0, irradianceWm2 / 1000 *
+    final il = math.max(0.0, irradianceWm2 / 1000 *
         (ilRefA + alphaScAperC * (cellTemperatureC - 25)));
     final io = ioRefA * math.pow(ratio, 3).toDouble() *
         math.exp(bandGapEv * seriesCells / aRefV * (1 - refK / tK));
