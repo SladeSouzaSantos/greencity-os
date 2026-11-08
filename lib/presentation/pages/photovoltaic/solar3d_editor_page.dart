@@ -23,6 +23,7 @@ import '../../widgets/photovoltaic/solar3d_touch_surface.dart';
 import '../../widgets/photovoltaic/solar3d_camera_controls.dart';
 import '../../widgets/photovoltaic/solar3d_obstacle_numeric_dialog.dart';
 import '../../widgets/photovoltaic/solar3d_position_dialog.dart';
+import '../../widgets/photovoltaic/solar3d_collapsible_section.dart';
 import '../../widgets/photovoltaic/solar3d_object_picker.dart';
 
 /// New opt-in scene editor. The legacy HSP calculation and SolarSystem remain
@@ -61,8 +62,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   String? initError;
   String? selectedId;
   double yaw = 0, pitch = 0.80, zoom = 1;
-  int month = 1, year = 2023;
-  bool allMonths = false, busy = false;
+  // The HSP NASA POWER provider supplies COMPLETE years 2022-2024 by
+  // default. The year 2026 is incomplete; use the most recent
+  // verified complete year rather than guessing 2025/2026 availability.
+  int year = 2024;
+  bool busy = false;
   String progress = '';
   Map<int, List<PanelMonthlyIrradianceLoss>> monthly = {};
   int sceneRevision = 0;
@@ -639,14 +643,13 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         dio: Dio(), endpoint: endpoint);
     final output = <int, List<PanelMonthlyIrradianceLoss>>{};
     try {
-      final months = allMonths ? List.generate(12, (i) => i + 1) : [month];
-      for (final m in months) {
+      for (var m = 1; m <= 12; m++) {
         if (!mounted) return;
         if (revision != sceneRevision) {
           throw StateError(
             'A cena mudou durante o cálculo. Calcule novamente.');
         }
-        setState(() => progress = 'Calculando mês $m/${months.last}');
+        setState(() => progress = 'Calculando mês $m/12');
         final values = <PanelMonthlyIrradianceLoss>[];
         for (final group in groups.values) {
           final sample = group.first;
@@ -1176,15 +1179,16 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     }
   }
 
-  void _reframe() {
+  void _topView() {
     _onScaleEnd();
     setState(() {
-      cameraFrameScene = document!.scene;
+      yaw = 0;
+      pitch = math.pi / 2;
       cameraPan = Offset.zero;
     });
   }
 
-   Widget _monthlyTable() {
+  Widget _monthlyTable() {
     if (monthly.isEmpty) return const SizedBox.shrink();
     final current = selected;
     if (current == null || current.kind != Solar3dObjectKind.panel) {
@@ -1322,6 +1326,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                   onPanStep: _panCamera,
                   onResetPan: _resetCameraPan,
                   onDefaultPerspective: _restorePerspective,
+                  onTopView: _topView,
                   onZoomIn: () => _zoomCamera(true),
                   onZoomOut: () => _zoomCamera(false),
                 ),
@@ -1341,35 +1346,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             'Arrastar o fundo não gira a câmera. '
             'Altura da placa = borda inferior; '
             'altura do obstáculo = base (0 m = solo).'),
-        Wrap(spacing: 8, runSpacing: 5, children: [
-          OutlinedButton.icon(
-            onPressed: () => setState(() {
-              _onScaleEnd();
-              yaw = 0;
-              pitch = math.pi / 2;
-              cameraPan = Offset.zero;
-            }),
-            icon: const Icon(Icons.map_outlined),
-            label: const Text('Vista superior · N ↑'),
-          ),
-          OutlinedButton.icon(
-            onPressed: () => setState(() {
-              _onScaleEnd();
-              yaw = .6;
-              pitch = .80;
-              cameraPan = Offset.zero;
-            }),
-            icon: const Icon(Icons.view_in_ar_outlined),
-            label: const Text('Perspectiva'),
-          ),
-          OutlinedButton.icon(
-            onPressed: _reframe,
-            icon: const Icon(Icons.center_focus_strong_outlined),
-            label: const Text('Enquadrar cena'),
-          ),
-        ]),
-        const Divider(),
-        Text('Sombra ao longo do dia e do ano',
+        Solar3dCollapsibleSection(
+          title: 'Trajetória solar e sombras por placa',
+          initiallyExpanded: true,
+          children: [
+            Text('Sombra ao longo do dia e do ano',
             style: Theme.of(context).textTheme.titleMedium),
         Text('Coordenadas solares do projeto — '
             'latitude ${widget.project.latitude.toStringAsFixed(6)}°; '
@@ -1491,8 +1472,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         const Text('As sombras seguem a trajetória solar calculada para '
             'a latitude/longitude e a data/hora escolhidas. '
             'O fuso é ajustável (padrão UTC−3), pois depende do projeto.'),
-        const Divider(),
-        Text('Objetos e módulos', style: Theme.of(context).textTheme.titleMedium),
+          ],
+        ),
+        Solar3dCollapsibleSection(
+          title: 'Objetos, posições e MPPTs',
+          children: [
+            Text('Objetos e módulos', style: Theme.of(context).textTheme.titleMedium),
         const Text('Cada inversor possui seus próprios MPPTs: '
             '“Inversor 1 / MPPT 1” é independente de '
             '“Inversor 2 / MPPT 1”. Selecione uma placa '
@@ -1680,10 +1665,16 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             icon: const Icon(Icons.restart_alt_outlined),
             label: const Text('RESETAR ANÁLISE 3D')),
         ]),
-        const Divider(),
-        _electricalAuditPanel(),
-        const Divider(),
-        Text('HSP por placa · consulta horária opcional',
+          ],
+        ),
+        Solar3dCollapsibleSection(
+          title: 'Auditoria elétrica preliminar',
+          children: [_electricalAuditPanel()],
+        ),
+        Solar3dCollapsibleSection(
+          title: 'Calcular perdas ópticas · 12 meses',
+          children: [
+            Text('HSP por placa · consulta horária opcional',
             style: Theme.of(context).textTheme.titleMedium),
         const Text('A consulta HSP horária utiliza uma rota independente '
             'do dimensionamento clássico. O domínio público HTTPS '
@@ -1724,32 +1715,39 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             label: const Text('Usar HSP local Windows'),
           ),
         ]),
-        Wrap(spacing: 14, children: [
-          DropdownButton<int>(value: year, items: [
-            for (final y in [2022,2023,2024])
-              DropdownMenuItem(value:y,child:Text('Ano $y')),
-          ],onChanged:busy ? null : (v) {
-            if (v != null) {
-              setState(() {
-                year = v;
-                monthly = {};
-              });
-            }
-          }),
-          DropdownButton<int>(value:month, items: [
-            for(var m=1;m<=12;m++)
-              DropdownMenuItem(value:m,child:Text('Mês $m')),
-          ],onChanged:busy ? null : (v) {if(v!=null)setState(()=>month=v);}),
-          FilterChip(label: const Text('Calcular 12 meses'),
-            selected:allMonths, onSelected:busy?null:(v)=>setState(()=>allMonths=v)),
-        ]),
+        Wrap(spacing: 14, crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Text('Ano de referência (12 meses completos):'),
+            DropdownButton<int>(value: year, items: [
+              for (final y in [2022, 2023, 2024])
+                DropdownMenuItem(value: y, child: Text('Ano $y')),
+            ], onChanged: busy ? null : (value) {
+              if (value != null) {
+                setState(() {
+                  year = value;
+                  monthly = {};
+                  lastCalculatedHourlyEndpoint = null;
+                });
+              }
+            }),
+          ],
+        ),
+        const Text('O HSP usa 2024 por padrão (último ano completo '
+            'oferecido pela configuração NASA POWER em produção). '
+            'Sempre são calculados janeiro a dezembro, mês a mês; '
+            '2026 não está completo e 2025 exige atualização dos '
+            'dados disponíveis no servidor.'),
         FilledButton.icon(onPressed:busy?null:_calculate,
           icon: const Icon(Icons.calculate_outlined),
           label:Text(busy ? progress : 'Calcular perdas ópticas por placa')),
         if (busy) const LinearProgressIndicator(),
         _monthlyTable(),
-        const SizedBox(height: 12),
-        Card(child: Padding(
+          ],
+        ),
+        Solar3dCollapsibleSection(
+          title: 'Aplicar correção óptica na geração',
+          children: [
+            Card(child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1770,8 +1768,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                 label: const Text('APLICAR CORREÇÃO ÓPTICA NA GERAÇÃO'),
               ),
               if (monthly.length != 12)
-                const Text('Selecione “Calcular 12 meses” e execute '
-                    'o cálculo completo para habilitar a aplicação.'),
+                const Text('Execute o cálculo de janeiro a dezembro '
+                    'para habilitar a aplicação da correção.'),
             ],
           ),
         )),
@@ -1780,6 +1778,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             'Perdas por MPPT exigem modelagem elétrica adicional (strings, '
             'bypass e curvas I–V calibradas).'),
         const SizedBox(height: 24),
+          ],
+        ),
       ]),
     );
   }

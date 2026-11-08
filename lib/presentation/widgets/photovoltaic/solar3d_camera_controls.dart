@@ -17,6 +17,7 @@ class Solar3dCameraControls extends StatelessWidget {
   final ValueChanged<Offset> onPanStep;
   final VoidCallback onResetPan;
   final VoidCallback onDefaultPerspective;
+  final VoidCallback onTopView;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
 
@@ -31,6 +32,7 @@ class Solar3dCameraControls extends StatelessWidget {
     required this.onPanStep,
     required this.onResetPan,
     required this.onDefaultPerspective,
+    required this.onTopView,
     required this.onZoomIn,
     required this.onZoomOut,
   });
@@ -72,7 +74,15 @@ class Solar3dCameraControls extends StatelessWidget {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               const Text('CÂMERA 3D', style: TextStyle(
                   fontSize: 10, fontWeight: FontWeight.bold)),
-              _direction('N', 'Orientar vista para Norte'),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                _direction('N', 'Orientar vista para Norte'),
+                SizedBox(width: 39, height: 39, child: IconButton(
+                  tooltip: 'Vista superior N para cima',
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.map_outlined, size: 21),
+                  onPressed: onTopView,
+                )),
+              ]),
               Row(mainAxisSize: MainAxisSize.min, children: [
                 _direction('O', 'Orientar vista para Oeste'),
                 SizedBox(width: 40, height: 39, child: IconButton(
@@ -126,7 +136,7 @@ class Solar3dCameraControls extends StatelessWidget {
                 tooltip: 'Deslocar vista para cima',
                 padding: EdgeInsets.zero,
                 icon: const Icon(Icons.arrow_upward),
-                onPressed: () => onPanStep(const Offset(0, -32)),
+                onPressed: () => onPanStep(const Offset(0, 32)),
               )),
               Row(mainAxisSize: MainAxisSize.min, children: [
                 SizedBox(width: 40, height: 37, child: IconButton(
@@ -152,7 +162,7 @@ class Solar3dCameraControls extends StatelessWidget {
                 tooltip: 'Deslocar vista para baixo',
                 padding: EdgeInsets.zero,
                 icon: const Icon(Icons.arrow_downward),
-                onPressed: () => onPanStep(const Offset(0, 32)),
+                onPressed: () => onPanStep(const Offset(0, -32)),
               )),
             ]),
           ),

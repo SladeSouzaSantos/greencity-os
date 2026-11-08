@@ -23,6 +23,7 @@ void main() {
     var zoomIn = 0;
     var zoomOut = 0;
     var defaultView = 0;
+    var topView = 0;
     await tester.pumpWidget(MaterialApp(home: Scaffold(
       body: SizedBox(height: 440, width: 340,
         child: Solar3dCameraControls(
@@ -33,11 +34,13 @@ void main() {
           onPanStep: pans.add,
           onResetPan: () => panReset++,
           onDefaultPerspective: () => defaultView++,
+          onTopView: () => topView++,
           onZoomIn: () => zoomIn++,
           onZoomOut: () => zoomOut++,
         ),
       ),
     )));
+    await tester.tap(find.byTooltip('Vista superior N para cima'));
     await tester.tap(find.byTooltip('Orientar vista para Norte'));
     await tester.tap(find.byTooltip('Orientar vista para Oeste'));
     await tester.tap(find.byTooltip('Orientar vista para Leste'));
@@ -58,13 +61,14 @@ void main() {
     expect(pitches, [.16, -.16]);
     expect(yaws, [-.18, .18]);
     expect(pans, [
-      const Offset(0, -32),
+      const Offset(0, 32),
       const Offset(-32, 0),
       const Offset(32, 0),
-      const Offset(0, 32),
+      const Offset(0, -32),
     ]);
     expect(panReset, 1);
     expect(defaultView, 1);
+    expect(topView, 1);
     expect(zoomIn, 1);
     expect(zoomOut, 1);
   });
