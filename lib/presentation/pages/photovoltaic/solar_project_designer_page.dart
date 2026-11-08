@@ -155,8 +155,15 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                   ElevatedButton(
                     onPressed: selectedInverter == null ? null : () {
                       setState(() {
+                        // Individual 3D module IDs inherit this inverter ID.
+                        final seed = DateTime.now().microsecondsSinceEpoch;
+                        var id = seed.toString();
+                        var suffix = 1;
+                        while (systems.any((system) => system.id == id)) {
+                          id = '${seed}_${suffix++}';
+                        }
                         systems.add(SolarSystem(
-                          id: DateTime.now().millisecondsSinceEpoch.toString(),
+                          id: id,
                           name: "Sistema ${systems.length + 1}",
                           inverter: selectedInverter!,
                           arrays: [],
