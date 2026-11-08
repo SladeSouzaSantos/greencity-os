@@ -32,5 +32,11 @@ void main() {
     expect(HspInputValidator.validateModuleCenterHeight(
       heightField.controller?.text,
     ), isNull);
+    // Obstacle capture is exclusively in Solar3D. This form must always
+    // produce obstacle-free HSP scenario input.
+    expect(find.byType(SwitchListTile), findsNothing);
+    expect(find.text('Simular Sombreamento Individual?'), findsNothing);
+    expect(find.textContaining('Adicione e posicione obstáculos'),
+      findsOneWidget);
   });
 }

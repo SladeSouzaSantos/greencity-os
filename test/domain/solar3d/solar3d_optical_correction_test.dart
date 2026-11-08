@@ -138,14 +138,91 @@ void main() {
     expect(() => make(list, yearResults(list)), throwsFormatException);
   });
 
-  test('MPPT editado no 3D não altera circuito por engano', () {
+  test('Troca apenas uma placa de MPPT no 3D sem alterar SolarArray', () {
     final list = systems();
+    final originalArrayMppt = list.first.arrays.first.mpptIndex;
     final base = Solar3dPlanFactory.fromSystems(list);
     final changed = Solar3dScene(base.objects.map((p) =>
-        p.id == 'SYS/1/1' ? p.copyWith(mpptIndex:2) : p).toList());
+      p.id == 'SYS/1/1' ? p.copyWith(mpptIndex: 2) : p).toList());
+    final data = {
+      for (var month = 1; month <= 12; month++)
+        month: changed.objects.map((panel) {
+          final ratio = panel.id == 'SYS/1/1' ? .5 : 1.0;
+          return PanelMonthlyIrradianceLoss(
+            panelId: panel.id, mpptIndex: panel.mpptIndex!,
+            stringId: null, monthUtc: month,
+            referenceHsp: 5, correctedHsp: 5 * ratio,
+            directLossKwhM2: 0,
+            shadeLossPercent: (1-ratio)*100,
+          );
+        }).toList(),
+    };
+    final correction = Solar3dOpticalCorrection.fromAnalysis(
+      systems: list, scene: changed, monthly: data, yearUtc: 2024);
+    expect(list.first.arrays.first.mpptIndex, originalArrayMppt);
+    expect(correction.groupsBySystemMppt['SYS']![1]!.moduleCount, 1);
+    expect(correction.groupsBySystemMppt['SYS']![2]!.moduleCount, 3);
+    expect(correction.groupsBySystemMppt['SYS']![1]!.powerWp, 500);
+    expect(correction.groupsBySystemMppt['SYS']![2]!.powerWp, 1500);
+    expect(correction.retention('SYS', 1, 0), 1);
+    expect(correction.retention('SYS', 2, 0), closeTo(5 / 6, 1e-12));
+    final project = SolarProject(
+      clientName: 'A', city: 'Natal', state: 'RN',
+      latitude: -5.8, longitude: -35.2,
+      monthlyConsumption: 500, systems: list,
+    )..opticalCorrection = correction;
+    expect(project.totalMonthlyGeneration[0],
+      lessThan(project.baselineMonthlyGeneration[0]));
+    // Electrical configuration remains original; the 3D distribution
+    // is a PRELIMINARY optically adjusted yield, not verified wiring.
+    expect(list.first.arrays.first.mpptIndex, 1);
+  });
+
+  test('Dois inversores com MPPT 1 ficam isolados no modelo e na geração', () {
+    final one = systems().first;
+    final two = SolarSystem(
+      id: 'SYS2', name: 'Inversor 2', inverter: one.inverter,
+      arrays: [
+        SolarArray(
+          solarScenario: one.arrays.first.solarScenario,
+          solarScenarioResult: one.arrays.first.solarScenarioResult,
+          mpptIndex: 1,
+        ),
+      ],
+    );
+    final list = [one, two];
+    final scene = Solar3dPlanFactory.fromSystems(list);
+    final data = {
+      for (var month = 1; month <= 12; month++)
+        month: scene.objects.map((panel) {
+          final factor = panel.id == 'SYS/1/1' ? .5 : 1.0;
+          return PanelMonthlyIrradianceLoss(
+            panelId: panel.id, mpptIndex: panel.mpptIndex!,
+            stringId: null, monthUtc: month,
+            referenceHsp: 5, correctedHsp: 5*factor,
+            directLossKwhM2: 0, shadeLossPercent: (1-factor)*100,
+          );
+        }).toList(),
+    };
+    final optical = Solar3dOpticalCorrection.fromAnalysis(
+      systems:list, scene:scene, monthly:data, yearUtc:2024);
+    expect(optical.retention('SYS', 1, 0), closeTo(.75, 1e-12));
+    expect(optical.retention('SYS2', 1, 0), 1);
+    final baseSecond = two.calculateSystemGenerationForMonth(0, null);
+    final correctedSecond = two.calculateSystemGenerationForMonth(
+      0, null,
+      opticalMpptGroups: optical.groupsBySystemMppt['SYS2']);
+    expect(correctedSecond, baseSecond);
+  });
+
+  test('Não permite MPPT acima do número real desse inversor', () {
+    final list = systems();
+    final base = Solar3dPlanFactory.fromSystems(list);
+    final invalid = Solar3dScene(base.objects.map((p) =>
+      p.id == 'SYS/1/1' ? p.copyWith(mpptIndex: 3) : p).toList());
     expect(() => Solar3dOpticalCorrection.fromAnalysis(
-      systems:list, scene:changed, monthly:yearResults(list),
-      yearUtc: 2024,
+      systems: list, scene: invalid,
+      monthly: yearResults(list), yearUtc: 2024,
     ), throwsFormatException);
   });
 
