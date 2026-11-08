@@ -1293,6 +1293,32 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           'IRRADIÂNCIA por placa. Posições iniciais são ilustrativas, '
           'não medições do telhado. A API HSP principal continua intacta.'
         ))),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('COORDENADAS USADAS NO SOMBREAMENTO',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              Wrap(spacing: 8, runSpacing: 2, children: [
+                Chip(
+                  avatar: const Icon(Icons.location_on_outlined, size: 17),
+                  label: Text('Latitude: '
+                      '${widget.project.latitude.toStringAsFixed(6)}°'),
+                  visualDensity: VisualDensity.compact,
+                ),
+                Chip(
+                  avatar: const Icon(Icons.explore_outlined, size: 17),
+                  label: Text('Longitude: '
+                      '${widget.project.longitude.toStringAsFixed(6)}°'),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ]),
+              const Text('Valores do projeto utilizados na posição do Sol '
+                  'e na consulta HSP; não são obtidos do GPS do celular.'),
+            ],
+          ),
+        ),
         LayoutBuilder(builder: (context, constraints) {
           // Reserve space for camera orientation AND the four-way viewport
           // controls without overlaying each other on compact phones.
@@ -1389,9 +1415,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         const Divider(),
         Text('Sombra ao longo do dia e do ano',
             style: Theme.of(context).textTheme.titleMedium),
-        Text('Local do projeto: '
-            '${widget.project.latitude.toStringAsFixed(4)}°, '
-            '${widget.project.longitude.toStringAsFixed(4)}°'),
+        Text('Coordenadas solares do projeto — '
+            'latitude ${widget.project.latitude.toStringAsFixed(6)}°; '
+            'longitude ${widget.project.longitude.toStringAsFixed(6)}°. '
+            'A mesma localização é enviada à API HSP.'),
         Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             OutlinedButton.icon(

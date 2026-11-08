@@ -635,3 +635,30 @@ um objeto temporário à cena. Ao selecionar um obstáculo salvo, o botão
   de persistência JSON v1. Os sliders permanecem disponíveis como
   controle rápido, inclusive para medidas fora do alcance inicial de
   20 m (expansão dinâmica do controle).
+
+## Correção de oclusão 3D e localização solar visível (08/11/2026)
+
+- Caso relatado: obstáculo de **5 m** (topo Y=5) e placa cuja
+  **borda inferior** fica a **5,5 m** no mesmo X/Z. Na vista superior,
+  a placa deve aparecer **na frente** do obstáculo, não atrás.
+- Causa diagnosticada: o pintor usava ordenação decrescente da
+  profundidade do **centro**; pintava primeiro o mais próximo e
+  cobria-o com o objeto de trás.
+- Solução: ordenar a pintura da face mais distante para a mais
+  próxima, considerando o ponto visível mais próximo entre os oito
+  vértices transformados de cada volume, e não só o centro.
+  `Solar3dObjectPicker` usa a ordem inversa para selecionar o
+  elemento visível no toque.
+- Testes: placa com borda a 5,5 m sobre obstáculo de topo 5 m;
+  situação inversa de placa abaixo do topo do obstáculo; rotação
+  azimutal da vista superior; seleção coerente ao tocar.
+- O motor de sombreamento e as coordenadas dos objetos **não foram
+  modificados**. Trata-se de correção de profundidade da exibição.
+  Em geometrias intersectadas complexas, a prévia Flutter ainda
+  utiliza ordenação por objeto, não um z-buffer de polígonos.
+- A latitude e a longitude de `widget.project` agora aparecem com
+  **6 casas decimais** imediatamente antes da cena 3D, com nomes
+  explícitos, e na seção de sombra. São exatamente os mesmos campos
+  enviados a `Solar3dSunPosition.calculate` e
+  `SolarResourceHourlyDataSource.getHourlyResource`, não a posição
+  automática do aparelho.

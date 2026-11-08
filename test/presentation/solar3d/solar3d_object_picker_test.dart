@@ -48,6 +48,40 @@ void main() {
     ), isNull);
   });
 
+  test('Top view picks panel ABOVE 5m obstacle and obstacle ABOVE panel', () {
+    const wall = Solar3dObject(
+      id: 'wall', kind: Solar3dObjectKind.obstacle,
+      center: Solar3dVector(0, 2.5, 0),
+      width: 3, depth: 3, height: 5,
+    );
+    const higher = Solar3dObject(
+      id: 'panel-above', kind: Solar3dObjectKind.panel,
+      center: Solar3dVector(0, 5.525, 0),
+      width: 1.2, depth: 2.1, height: .05, mpptIndex: 1,
+    );
+    final aboveScene = Solar3dScene([higher, wall]);
+    final aboveView = Solar3dProjection(
+      scene: aboveScene, size: const Size(600, 400),
+      yaw: 0, pitch: math.pi / 2, zoom: 1,
+    );
+    expect(Solar3dObjectPicker.pick(
+      at: aboveView.project(higher.center),
+      view: aboveView, scene: aboveScene,
+    )?.id, 'panel-above');
+
+    final lower = higher.copyWith(
+        center: const Solar3dVector(0, 4.525, 0));
+    final belowScene = Solar3dScene([wall, lower]);
+    final belowView = Solar3dProjection(
+      scene: belowScene, size: const Size(600, 400),
+      yaw: 0, pitch: math.pi / 2, zoom: 1,
+    );
+    expect(Solar3dObjectPicker.pick(
+      at: belowView.project(lower.center),
+      view: belowView, scene: belowScene,
+    )?.id, 'wall');
+  });
+
   test('hidden objects are not touch targets', () {
     final view = Solar3dProjection(
       scene: scene, size: const Size(600, 400),

@@ -51,11 +51,11 @@ class Solar3dObjectPicker {
     Set<String> hiddenIds = const {},
     double touchSlop = 18,
   }) {
-    final visible = scene.objects
-        .where((o) => !hiddenIds.contains(o.id)).toList()
-      // Painter draws far-to-near (descending depth); inspect in
-      // reverse so an overlapping foreground face wins.
-      ..sort((a, b) => view.depth(a.center).compareTo(view.depth(b.center)));
+    // Pick in reverse of the painter order. A panel physically ABOVE
+    // an obstacle must be chosen when both project to the same pixels.
+    final visible = view.farToNear(
+      scene.objects.where((o) => !hiddenIds.contains(o.id)),
+    ).reversed;
     for (final object in visible) {
       if (_faces(object, view).any((face) =>
           _distanceToPolygon(at, face) <= 1e-6)) {

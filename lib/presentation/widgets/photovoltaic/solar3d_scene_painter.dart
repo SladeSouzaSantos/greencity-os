@@ -82,6 +82,38 @@ class Solar3dProjection {
         y * math.sin(pitch);
   }
 
+  /// Largest camera-facing depth among the object's rotated corners.
+  ///
+  /// Sorting by the CENTRE is incorrect for tall boxes: a 5 m obstacle
+  /// with centre Y=2.5 can obscure a panel at 4.5 m, even though its
+  /// top face Y=5 is in front of the panel. In top view, use the object
+  /// TOP (not centre); for oblique cameras, include all eight corners.
+  double frontSurfaceDepth(Solar3dObject object) {
+    var nearest = -double.infinity;
+    for (final x in [-object.width / 2, object.width / 2]) {
+      for (final y in [-object.height / 2, object.height / 2]) {
+        for (final z in [-object.depth / 2, object.depth / 2]) {
+          nearest = math.max(
+            nearest,
+            depth(transform(object, Solar3dVector(x, y, z))),
+          );
+        }
+      }
+    }
+    return nearest;
+  }
+
+  /// Far-to-near paint order: the closest face must be painted LAST.
+  /// The same ordering (reversed) is used by touch picking so that
+  /// visible objects, not occluded objects, receive the gesture.
+  List<Solar3dObject> farToNear(Iterable<Solar3dObject> objects) =>
+      objects.toList()
+        ..sort((a, b) {
+          final distance = frontSurfaceDepth(a)
+              .compareTo(frontSurfaceDepth(b));
+          return distance != 0 ? distance : a.id.compareTo(b.id);
+        });
+
   /// Consistent with the geometry raycast basis Ry(azimuth) Rx(tilt).
   Solar3dVector transform(Solar3dObject object, Solar3dVector point) {
     final a = object.azimuthDegrees * math.pi / 180;
@@ -172,9 +204,11 @@ class Solar3dScenePainter extends CustomPainter {
         trackerKeys.add(key);
       }
     }
-    final visible = scene.objects.where((o) =>
-        !hiddenIds.contains(o.id)).toList()
-      ..sort((a,b) => view.depth(b.center).compareTo(view.depth(a.center)));
+    // Painter's algorithm: far surfaces first, nearest surfaces last.
+    // Formerly descending centre-depth caused a lower obstacle to cover
+    // a higher panel in the top-down view.
+    final visible = view.farToNear(scene.objects.where((o) =>
+        !hiddenIds.contains(o.id)));
     for (final object in visible) {
       final selected = object.id == selectedId;
       final excluded = excludedIds.contains(object.id);

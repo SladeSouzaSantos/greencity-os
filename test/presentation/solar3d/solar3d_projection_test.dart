@@ -85,6 +85,57 @@ void main() {
     expect(recovered.z, closeTo(sample.z, 1e-9));
   });
 
+  test('Ordem em vista superior considera SUPERFÍCIES e não centros', () {
+    const obstacle = Solar3dObject(
+      id: 'obstacle-5m', kind: Solar3dObjectKind.obstacle,
+      center: Solar3dVector(0, 2.5, 0),
+      width: 3, depth: 3, height: 5,
+    );
+    final above = panel.copyWith(
+        center: const Solar3dVector(0, 5.525, 0));
+    final below = panel.copyWith(
+        center: const Solar3dVector(0, 4.525, 0));
+    final aboveScene = Solar3dScene([above, obstacle]);
+    final belowScene = Solar3dScene([below, obstacle]);
+
+    final aboveView = Solar3dProjection(
+      scene: aboveScene, size: const Size(600, 450),
+      yaw: 0, pitch: math.pi / 2, zoom: 1,
+    );
+    expect(aboveView.depth(above.center),
+        greaterThan(aboveView.depth(obstacle.center)));
+    expect(aboveView.frontSurfaceDepth(above),
+        greaterThan(aboveView.frontSurfaceDepth(obstacle)));
+    expect(aboveView.farToNear(aboveScene.objects).map((o) => o.id),
+        ['obstacle-5m', 'M01']);
+
+    final belowView = Solar3dProjection(
+      scene: belowScene, size: const Size(600, 450),
+      yaw: 0, pitch: math.pi / 2, zoom: 1,
+    );
+    // Obstacle top (5 m) covers a module below it (top 4.55 m).
+    expect(belowView.frontSurfaceDepth(obstacle),
+        greaterThan(belowView.frontSurfaceDepth(below)));
+    expect(belowView.farToNear(belowScene.objects).map((o) => o.id),
+        ['M01', 'obstacle-5m']);
+  });
+
+  test('A ordenação 3D é estável mesmo após mudar o azimute', () {
+    const obstacle = Solar3dObject(
+      id: 'obstacle', kind: Solar3dObjectKind.obstacle,
+      center: Solar3dVector(0, 2.5, 0),
+      width: 3, depth: 3, height: 5,
+    );
+    final elevatedPanel = panel.copyWith(
+        center: const Solar3dVector(0, 5.525, 0));
+    final objects = Solar3dScene([obstacle, elevatedPanel]);
+    final view = Solar3dProjection(
+      scene: objects, size: const Size(600, 500),
+      yaw: math.pi / 2, pitch: math.pi / 2, zoom: 1,
+    );
+    expect(view.farToNear(objects.objects).last.id, elevatedPanel.id);
+  });
+
   test('Arrasto em perspectiva não altera eixo Y', () {
     final camera = Solar3dProjection(
       scene: initial, size: const Size(520,480),
