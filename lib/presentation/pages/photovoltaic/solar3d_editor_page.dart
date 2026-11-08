@@ -43,6 +43,54 @@ class Solar3dEditorPage extends StatefulWidget {
 class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Solar3dSceneDocument? document;
   Solar3dSceneStorage? storage;
+  Timer? _autosaveTimer;
+  Future<void> _storageWriteQueue = Future<void>.value();
+  bool _sceneEdited = false;
+
+  /// Every geometry/MPPT change auto-persists locally, without storing the
+  /// temporary optical monthly results or changing the production circuit.
+  void _scheduleSceneAutosave(Solar3dSceneDocument snapshot) {
+    if (storage == null) return;
+    _sceneEdited = true;
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(const Duration(milliseconds: 350), () {
+      _autosaveTimer = null;
+      unawaited(_queueSceneSave(snapshot));
+    });
+  }
+
+  Future<void> _queueSceneSave(Solar3dSceneDocument snapshot) {
+    final destination = storage;
+    if (destination == null) return Future<void>.value();
+    // Serialize writes: a slow disk operation cannot overwrite the next
+    // document snapshot out of order.
+    _storageWriteQueue = _storageWriteQueue.then((_) async {
+      try {
+        await destination.save(snapshot);
+      } catch (error) {
+        debugPrint('Solar3D autosave failed: $error');
+      }
+    });
+    return _storageWriteQueue;
+  }
+
+  Future<void> _flushSceneAutosave(Solar3dSceneDocument snapshot) {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = null;
+    return _queueSceneSave(snapshot);
+  }
+
+  Future<void> _clearSceneStorage() {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = null;
+    _sceneEdited = false;
+    final destination = storage!;
+    _storageWriteQueue = _storageWriteQueue.then(
+      (_) => destination.clear(),
+    );
+    return _storageWriteQueue;
+  }
+
   // Freeze framing during edits, so dragging does not recenter the scene.
   Solar3dScene? cameraFrameScene;
   Solar3dScene? catalogInitialScene;
@@ -113,6 +161,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   @override
   void dispose() {
     sunPlayback?.cancel();
+    _autosaveTimer?.cancel();
+    if (_sceneEdited && document != null) {
+      // Leaving immediately after dragging still saves the last position.
+      unawaited(_queueSceneSave(document!));
+    }
     hourlyEndpointController.dispose();
     super.dispose();
   }
@@ -244,7 +297,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     );
     if (!mounted || confirmed != true) return;
     try {
-      await storage!.clear();
+      await _clearSceneStorage();
       if (!mounted) return;
       final base = catalogInitialScene ??
           Solar3dPlanFactory.fromSystems(widget.systems);
@@ -292,11 +345,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     setState(() {
       document = next;
       monthly = {};
-        calculatedYearUtc = null;
+      calculatedYearUtc = null;
       electricalAudit = null;
       lastCalculatedHourlyEndpoint = null;
       sceneRevision++;
     });
+    _scheduleSceneAutosave(next);
   }
 
   void _replace(Solar3dObject next) {
@@ -519,16 +573,6 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       stringId: submitted.isEmpty ? null : submitted,
       clearString: submitted.isEmpty,
     ));
-  }
-
-  Future<void> _save() async {
-    if (document == null || storage == null) return;
-    try {
-      await storage!.save(document!);
-      _notice('Cena 3D salva neste dispositivo; circuito elétrico original preservado.');
-    } catch (err) {
-      _notice('Falha ao salvar cena: $err');
-    }
   }
 
   Solar3dScene get analysisScene {
@@ -1032,7 +1076,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             'As conexões físicas originais NÃO serão alteradas. '
             'A geração estimada pode mudar pela nova distribuição '
             'hipotética dos MPPTs além da sombra. '
-            'A cena de estudo será salva localmente no dispositivo.\n\n'
+            'A cena de estudo é salva automaticamente neste aparelho.\n\n'
             'ATENÇÃO: É uma estimativa experimental de irradiância; '
             'não modela eletricamente strings, bypass nem mismatch '
             'sob sombras parciais. Não representa geração AC '
@@ -1064,7 +1108,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       // Applying the scenario also persists its geometry and per-panel
       // assignment locally; otherwise reopening the editor would restore
       // the previous layout even while the session uses the new ratios.
-      await storage!.save(doc);
+      await _flushSceneAutosave(doc);
       if (!mounted) return;
       Navigator.pop(context, correction);
     } on FormatException catch (error) {
@@ -1263,14 +1307,15 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Análise 3D · GreenCity OS'),
         actions: [
-          IconButton(onPressed: _save, tooltip: 'Salvar cena',
-            icon: const Icon(Icons.save_outlined)),
+
         ]),
       body: ListView(padding: const EdgeInsets.all(14), children: [
         const Card(child: Padding(padding: EdgeInsets.all(12), child: Text(
-          'Laboratório de sombreamento: cena volumétrica editável e perdas de '
-          'IRRADIÂNCIA por placa. Posições iniciais são ilustrativas, '
-          'não medições do telhado. A API HSP principal continua intacta.'
+          'Laboratório de sombreamento: cena editável e perdas de '
+          'IRRADIÂNCIA por placa. Alterações de geometria e MPPT '
+          'são salvas automaticamente neste aparelho. '
+          'As posições iniciais são ilustrativas; '
+          'a API HSP e o circuito original continuam intactos.'
         ))),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1681,9 +1726,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           OutlinedButton.icon(onPressed: busy ? null : _addObstacle,
             icon: const Icon(Icons.add_box_outlined),
             label: const Text('Adicionar obstáculo')),
-          FilledButton.icon(onPressed: busy ? null : _save,
-            icon: const Icon(Icons.save_outlined),
-            label: const Text('Salvar cena')),
+
           OutlinedButton.icon(onPressed: busy ? null : _resetStudy,
             icon: const Icon(Icons.restart_alt_outlined),
             label: const Text('RESETAR ANÁLISE 3D')),
