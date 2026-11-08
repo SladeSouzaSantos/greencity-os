@@ -2,11 +2,14 @@
 
 **Revisão:** 08/11/2026
 **Branch:** `feature/solar3d-shading-analysis`
-**Status:** MVP **óptico** aprovado no CI e reportado como funcional
-pelo usuário no Windows; **não é homologação elétrica para instalação**.
-PR #14 em preparação para revisão, sem merge em `main`. O smoke Android
-físico e a validação do endpoint HSP no ambiente final ainda faltam.
-Não apresentar geração AC experimental como garantida.
+**Status:** MVP **óptico** aprovado no CI Flutter, Windows e
+Android e reportado como funcional pelo usuário no Android,
+inclusive na seleção múltipla. **Não equivale a homologação
+elétrica para instalação.** A integração foi autorizada pela
+[PR #14](https://github.com/SladeSouzaSantos/greencity-os/pull/14).
+A disponibilidade do HSP horário no ambiente de destino continua
+sujeita a verificação operacional. Não apresentar rendimento
+DC/AC experimental como garantido.
 
 ## 1. Contrato das três etapas
 
