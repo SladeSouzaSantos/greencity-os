@@ -411,8 +411,12 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    onPressed: () => setState(
-                      () => widget.project.opticalCorrection = null),
+                    onPressed: () async {
+                      _opticalLoadRevision++;
+                      await _clearAppliedCorrection();
+                      if (!mounted) return;
+                      setState(() => widget.project.opticalCorrection = null);
+                    },
                     icon: const Icon(Icons.restore_outlined),
                     label: const Text('Remover correção 3D e comparar '
                         'geração original'),
@@ -478,10 +482,8 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                     const SizedBox(height: 8),
                     FilledButton.icon(
                       onPressed: () async {
-                        // The editor can modify and persist geometry even if
-                        // dismissed by Back. Invalidate old optical results
-                        // on entry; a fresh full-year analysis is required.
-                        setState(() => widget.project.opticalCorrection = null);
+                        // Reopening without editing must preserve applied losses.
+                        // Only scene edits or explicit removal invalidate them.
                         final correction = await Navigator.push<
                             Solar3dOpticalCorrection>(
                           context, MaterialPageRoute(
@@ -489,7 +491,11 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                               project: widget.project, systems: systems),
                           ),
                         );
-                        if (!context.mounted || correction == null) {
+                        if (!context.mounted) return;
+                        // Rebuild even on plain Back if a scene edit
+                        // invalidated the previously applied correction.
+                        if (correction == null) {
+                          setState(() {});
                           return;
                         }
                         if (!correction.isValidFor(systems)) {
@@ -506,8 +512,8 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
                         });
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text(
-                            'Correção óptica aplicada à geração estimada '
-                            'desta sessão. Confira a comparação sem/com '
+                            'Correção óptica aplicada e salva neste '
+                            'dispositivo. Confira a comparação sem/com '
                             'sombra no cartão de geração.')),
                         );
                       },
