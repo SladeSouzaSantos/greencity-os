@@ -84,7 +84,10 @@ class Solar3dInverterElectricalSpec {
     final divisor = (acPhases == 3 ? math.sqrt(3) : 1.0) *
         nominalAcVoltageV;
     final acCurrent = ac / divisor;
-    final acLoss = acCurrent * acCurrent * acResistanceOhm;
+    // Three-phase, balanced, Rphase is PER PHASE conductor resistance.
+    // Using only I²R for three phases would understate AC cable losses.
+    final acLoss = (acPhases == 3 ? 3 : 1) *
+        acCurrent * acCurrent * acResistanceOhm;
     ac = math.max(0, ac - acLoss).toDouble();
     return Solar3dInverterHour(
       rawDcW: rawDc, dcCableLossW: dcCableLoss,
