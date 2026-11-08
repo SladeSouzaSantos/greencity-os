@@ -10,19 +10,6 @@ import 'solar3d_scene_painter.dart';
 /// Mobile touches have a small tolerance around projected silhouettes.
 /// Exact overlaps prefer objects drawn later (nearest to the camera).
 class Solar3dObjectPicker {
-  static List<List<Offset>> _faces(
-      Solar3dObject object, Solar3dProjection view) {
-    final top = view.face(object, object.height / 2);
-    if (object.kind == Solar3dObjectKind.panel) return [top];
-    final bottom = view.face(object, -object.height / 2);
-    return [
-      top, bottom,
-      for (var i = 0; i < 4; i++)
-        [bottom[i], bottom[(i + 1) % 4],
-         top[(i + 1) % 4], top[i]],
-    ];
-  }
-
   static double _distanceToSegment(Offset point, Offset a, Offset b) {
     final edge = b - a;
     final norm = edge.dx * edge.dx + edge.dy * edge.dy;
@@ -51,26 +38,35 @@ class Solar3dObjectPicker {
     Set<String> hiddenIds = const {},
     double touchSlop = 18,
   }) {
-    // Pick in reverse of the painter order. A panel physically ABOVE
-    // an obstacle must be chosen when both project to the same pixels.
-    final visible = view.farToNear(
+    // Exact selection uses depth interpolated at the finger location
+    // on each face. A raised panel is picked over an obstacle top if
+    // its projected face is actually in front from this camera angle.
+    final faces = view.facesFarToNear(
       scene.objects.where((o) => !hiddenIds.contains(o.id)),
-    ).reversed;
-    for (final object in visible) {
-      if (_faces(object, view).any((face) =>
-          _distanceToPolygon(at, face) <= 1e-6)) {
-        return object;
+    );
+    Solar3dObject? exact;
+    var nearestDepth = -double.infinity;
+    for (final surface in faces) {
+      final candidateDepth = surface.depthAt(at);
+      if (candidateDepth != null && candidateDepth > nearestDepth) {
+        exact = surface.object;
+        nearestDepth = candidateDepth;
       }
     }
+    if (exact != null) return exact;
+    // Finger tolerance is applied ONLY after exact-hit testing. Prefer
+    // closest visible silhouette, with camera depth breaking ties.
     Solar3dObject? nearest;
     var shortest = touchSlop;
-    for (final object in visible) {
-      final proximity = _faces(object, view)
-          .map((face) => _distanceToPolygon(at, face))
-          .reduce(math.min);
-      if (proximity < shortest) {
+    nearestDepth = -double.infinity;
+    for (final surface in faces) {
+      final proximity = _distanceToPolygon(at, surface.corners);
+      if (proximity < shortest - .01 ||
+          ((proximity - shortest).abs() <= .01 &&
+            surface.averageDepth > nearestDepth)) {
         shortest = proximity;
-        nearest = object;
+        nearestDepth = surface.averageDepth;
+        nearest = surface.object;
       }
     }
     return nearest;

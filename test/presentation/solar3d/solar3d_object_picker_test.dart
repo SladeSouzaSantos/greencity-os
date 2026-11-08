@@ -84,6 +84,29 @@ void main() {
     )?.id, 'wall');
   });
 
+  test('faces resolve elevation ordering in oblique camera too', () {
+    const wall = Solar3dObject(
+      id: 'wall', kind: Solar3dObjectKind.obstacle,
+      center: Solar3dVector(0, 2.5, 0),
+      width: 3, depth: 3, height: 5,
+    );
+    const high = Solar3dObject(
+      id: 'high', kind: Solar3dObjectKind.panel,
+      center: Solar3dVector(0, 5.525, 0),
+      width: 1.2, depth: 2.1, height: .05, mpptIndex: 1,
+    );
+    final above = Solar3dScene([wall, high]);
+    for (final pitch in [0.8, 1.1, math.pi / 2]) {
+      final view = Solar3dProjection(
+        scene: above, size: const Size(640, 480),
+        yaw: .5, pitch: pitch, zoom: 1.3,
+      );
+      expect(Solar3dObjectPicker.pick(
+        at: view.project(high.center), view: view, scene: above,
+      )?.id, 'high');
+    }
+  });
+
   test('hidden objects are not touch targets', () {
     final view = Solar3dProjection(
       scene: scene, size: const Size(600, 400),

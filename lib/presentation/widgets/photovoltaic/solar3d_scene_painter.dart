@@ -3,6 +3,47 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../domain/solar3d/solar3d_geometric_shading.dart';
 
+/// A quadrilateral with 3D depth at EACH projected vertex.
+/// Picking interpolates depth under the fingertip, not only an object's
+/// centre/nearest corner; the painter uses the same six physical faces.
+class Solar3dProjectedFace {
+  final Solar3dObject object;
+  final int index; // 0: underside, 1: top/front, 2-5: four sides
+  final List<Offset> corners;
+  final List<double> depths;
+
+  const Solar3dProjectedFace({
+    required this.object,
+    required this.index,
+    required this.corners,
+    required this.depths,
+  });
+
+  double get averageDepth =>
+      depths.reduce((a, b) => a + b) / depths.length;
+
+  double? _triangleDepth(Offset point, int a, int b, int c) {
+    final origin = corners[a];
+    final u = corners[b] - origin;
+    final v = corners[c] - origin;
+    final p = point - origin;
+    final det = u.dx * v.dy - u.dy * v.dx;
+    if (det.abs() < 1e-10) return null;
+    final ub = (p.dx * v.dy - p.dy * v.dx) / det;
+    final vc = (u.dx * p.dy - u.dy * p.dx) / det;
+    if (ub < -1e-6 || vc < -1e-6 || ub + vc > 1 + 1e-6) {
+      return null;
+    }
+    return depths[a] * (1 - ub - vc) + depths[b] * ub + depths[c] * vc;
+  }
+
+  /// Orthographic camera projection keeps camera depth affine on each
+  /// triangle, so barycentric interpolation is valid for touching a face.
+  double? depthAt(Offset point) =>
+      _triangleDepth(point, 0, 1, 2) ??
+      _triangleDepth(point, 0, 2, 3);
+}
+
 /// Cross-platform volumetric scene preview (Flutter CustomPainter).
 /// 3D world: X east, Y up, Z north. No projected geometry enters physics.
 class Solar3dProjection {
@@ -137,6 +178,55 @@ class Solar3dProjection {
       Solar3dVector(-halfX,y,halfZ),
     ].map((p) => project(transform(object,p))).toList();
   }
+
+  /// Six closed faces of an oriented volumetric object. All surfaces,
+  /// including obstacles' sides, participate in true oblique occlusion.
+  List<Solar3dProjectedFace> projectedFaces(Solar3dObject object) {
+    final hx = object.width / 2;
+    final hy = object.height / 2;
+    final hz = object.depth / 2;
+    final bottom = [
+      Solar3dVector(-hx, -hy, -hz), Solar3dVector(hx, -hy, -hz),
+      Solar3dVector(hx, -hy, hz), Solar3dVector(-hx, -hy, hz),
+    ];
+    final top = [
+      Solar3dVector(-hx, hy, -hz), Solar3dVector(hx, hy, -hz),
+      Solar3dVector(hx, hy, hz), Solar3dVector(-hx, hy, hz),
+    ];
+    final world = [...bottom, ...top].map(
+      (point) => transform(object, point),
+    ).toList();
+    final faceIndices = [
+      [0, 1, 2, 3], [4, 5, 6, 7],
+      [0, 1, 5, 4], [1, 2, 6, 5],
+      [2, 3, 7, 6], [3, 0, 4, 7],
+    ];
+    return [
+      for (var i = 0; i < faceIndices.length; i++)
+        Solar3dProjectedFace(
+          object: object, index: i,
+          corners: faceIndices[i].map((j) => project(world[j])).toList(),
+          depths: faceIndices[i].map((j) => depth(world[j])).toList(),
+        ),
+    ];
+  }
+
+  /// Face-level painter sorting is needed when a tall obstacle overlaps a
+  /// raised module in an angled view. Sorting WHOLE objects by maximum
+  /// corner depth can mistakenly paint all obstacle faces over the module.
+  List<Solar3dProjectedFace> facesFarToNear(
+      Iterable<Solar3dObject> objects) {
+    final faces = [
+      for (final object in objects) ...projectedFaces(object),
+    ];
+    faces.sort((a, b) {
+      final diff = a.averageDepth.compareTo(b.averageDepth);
+      if (diff != 0) return diff;
+      final ids = a.object.id.compareTo(b.object.id);
+      return ids != 0 ? ids : a.index.compareTo(b.index);
+    });
+    return faces;
+  }
 }
 
 class Solar3dScenePainter extends CustomPainter {
@@ -204,80 +294,79 @@ class Solar3dScenePainter extends CustomPainter {
         trackerKeys.add(key);
       }
     }
-    // Painter's algorithm: far surfaces first, nearest surfaces last.
-    // Formerly descending centre-depth caused a lower obstacle to cover
-    // a higher panel in the top-down view.
-    final visible = view.farToNear(scene.objects.where((o) =>
+    // Paint QUADRILATERALS across all objects in far-to-near order.
+    // In oblique camera angles a wall's near side and a panel's upper
+    // face can alternate visibility, unlike whole-object depth sorting.
+    const colors = [
+      Color(0xff21a0ba), Color(0xffa880db),
+      Color(0xffd99554), Color(0xff78bd71),
+      Color(0xffca6c91), Color(0xff57a58b),
+      Color(0xff7c9ce7), Color(0xffd4bb63),
+    ];
+    final faces = view.facesFarToNear(scene.objects.where((o) =>
         !hiddenIds.contains(o.id)));
-    for (final object in visible) {
+    for (final surface in faces) {
+      final object = surface.object;
       final selected = object.id == selectedId;
       final excluded = excludedIds.contains(object.id);
       final isPanel = object.kind == Solar3dObjectKind.panel;
       final inverterId = object.id.split('/').first;
       final trackerKey = '$inverterId/${object.mpptIndex}';
       final colorIndex = trackerKeys.indexOf(trackerKey);
-      final colors = [
-        const Color(0xff21a0ba), const Color(0xffa880db),
-        const Color(0xffd99554), const Color(0xff78bd71),
-        const Color(0xffca6c91), const Color(0xff57a58b),
-        const Color(0xff7c9ce7), const Color(0xffd4bb63),
-      ];
       final base = isPanel
           ? colors[(colorIndex < 0 ? 0 : colorIndex) % colors.length]
           : const Color(0xff687989);
-      final selectedColor = excluded ? const Color(0xff64707a)
+      final lit = excluded ? const Color(0xff64707a)
           : isDaylight ? base : Color.lerp(base, Colors.black, .55)!;
-      if (!isPanel) {
-        final front = view.face(object, -object.height / 2);
-        final top = view.face(object, object.height / 2);
-        _fill(canvas, front, selectedColor.withValues(alpha: .65), selected);
-        _fill(canvas, top, selectedColor.withValues(alpha: .85), selected);
-        for (var i = 0; i < 4; i++) {
-          canvas.drawLine(front[i], top[i], Paint()
-            ..color=const Color(0xffd6e7eb).withValues(alpha:.4)
-            ..strokeWidth=1);
-        }
-      } else {
-        final face = view.face(object, object.height / 2);
-        final shade = directShadeByPanel[object.id];
-        final color = shade == null
-            ? selectedColor
-            : Color.lerp(selectedColor, const Color(0xff61485a), shade)!;
-        _fill(canvas, face, color.withValues(alpha: excluded ? .3 : .95),
-            selected);
-        // Compact marker on each illuminated front face, without stacking
-        // a label over every panel. A missing value means no direct beam.
-        if (shade != null && shade > 0) {
-          final anchor = view.project(object.center);
-          canvas.drawCircle(anchor.translate(0, -7), 3.5, Paint()
-            ..color = const Color(0xffffb15e));
-        }
-        canvas.drawLine(face[0],face[2], Paint()
-            ..color = const Color(0xffe4efff).withValues(alpha:.16)
-            ..strokeWidth=0.5);
+      final shade = isPanel ? directShadeByPanel[object.id] : null;
+      var tint = shade == null
+          ? lit : Color.lerp(lit, const Color(0xff61485a), shade)!;
+      if (surface.index == 0) {
+        tint = Color.lerp(tint, Colors.black, .38)!;
+      } else if (surface.index >= 2) {
+        tint = Color.lerp(tint, Colors.black,
+            surface.index.isEven ? .17 : .29)!;
       }
-      // Label only the selected panel: otherwise the preview becomes
-      // unreadable with multiple close-by modules and long shadow polygons.
-      // Every panel remains selectable through the list below the scene.
-      if (selected || !isPanel) {
-        final blocked = directShadeByPanel[object.id];
-        final label = isPanel
-            ? 'Inv ${inverterIds.indexOf(inverterId) + 1}'
-              ' · placa ${object.id.split("/").last}'
-              ' · MPPT ${object.mpptIndex}'
-              '${blocked == null ? " · sem feixe" : " · ${(blocked * 100).round()}% sombra"}'
-            : object.id.length <= 16
-                ? object.id : '${object.id.substring(0, 16)}…';
-        final layout = TextPainter(
-          text: TextSpan(text: label, style: TextStyle(
-            fontSize: selected ? 12 : 9,
-            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-            color: selected ? Colors.white : const Color(0xffc9e5eb),
-          )), textDirection: TextDirection.ltr,
-        )..layout();
+      _fill(canvas, surface.corners,
+          tint.withValues(alpha: excluded ? .3 : .98), selected);
+      if (isPanel && surface.index == 1 && shade != null && shade > 0) {
         final anchor = view.project(object.center);
-        layout.paint(canvas, anchor.translate(-layout.width/2, -layout.height/2));
+        canvas.drawCircle(anchor.translate(0, -7), 3.5, Paint()
+          ..color = const Color(0xffffb15e));
       }
+      if (isPanel && surface.index == 1) {
+        canvas.drawLine(surface.corners[0], surface.corners[2], Paint()
+          ..color = const Color(0xffe4efff).withValues(alpha: .16)
+          ..strokeWidth = 0.5);
+      }
+    }
+
+    // One selected-object label only. Obstacle labels used to be painted
+    // after each entire box and could visually cover raised panels.
+    final selectedObject = scene.objects.where(
+      (o) => o.id == selectedId && !hiddenIds.contains(o.id),
+    ).firstOrNull;
+    if (selectedObject != null) {
+      final isPanel = selectedObject.kind == Solar3dObjectKind.panel;
+      final inverterId = selectedObject.id.split('/').first;
+      final shade = directShadeByPanel[selectedObject.id];
+      final label = isPanel
+          ? 'Inv ${inverterIds.indexOf(inverterId) + 1}'
+            ' · placa ${selectedObject.id.split("/").last}'
+            ' · MPPT ${selectedObject.mpptIndex}'
+            '${shade == null ? "" : " · ${(shade * 100).round()}% sombra"}'
+          : 'Obstáculo ${selectedObject.id.length <= 13
+              ? selectedObject.id : selectedObject.id.substring(0, 13)}';
+      final layout = TextPainter(
+        text: TextSpan(text: label, style: const TextStyle(
+          fontSize: 11, fontWeight: FontWeight.bold,
+          color: Colors.white,
+        )),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final anchor = view.project(selectedObject.center);
+      layout.paint(canvas, anchor.translate(-layout.width / 2,
+          -layout.height / 2));
     }
     final title = TextPainter(
       text: const TextSpan(text: 'CENA 3D · VISTA DE PROJETO (NÃO É FOTO)',

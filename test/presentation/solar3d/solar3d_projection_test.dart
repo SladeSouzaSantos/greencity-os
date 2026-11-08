@@ -136,6 +136,34 @@ void main() {
     expect(view.farToNear(objects.objects).last.id, elevatedPanel.id);
   });
 
+  test('ordenacao das faces respeita placa elevada em vista obliqua', () {
+    const wall = Solar3dObject(
+      id: 'wall', kind: Solar3dObjectKind.obstacle,
+      center: Solar3dVector(0, 2.5, 0),
+      width: 3, depth: 3, height: 5,
+    );
+    final high = panel.copyWith(
+        center: const Solar3dVector(0, 5.525, 0));
+    final scene = Solar3dScene([wall, high]);
+    for (final angle in [.65, .9, 1.25, math.pi / 2]) {
+      final view = Solar3dProjection(
+        scene: scene, size: const Size(600, 450),
+        yaw: .6, pitch: angle, zoom: 1,
+      );
+      final surfaces = view.facesFarToNear(scene.objects);
+      expect(surfaces.length, 12);
+      // The top of the high module must be painted later than the
+      // top of the lower obstacle at the same East/North coordinates.
+      final wallTop = surfaces.singleWhere(
+          (face) => face.object.id == 'wall' && face.index == 1);
+      final panelTop = surfaces.singleWhere(
+          (face) => face.object.id == 'M01' && face.index == 1);
+      expect(panelTop.averageDepth, greaterThan(wallTop.averageDepth));
+      expect(surfaces.indexOf(panelTop),
+          greaterThan(surfaces.indexOf(wallTop)));
+    }
+  });
+
   test('Arrasto em perspectiva não altera eixo Y', () {
     final camera = Solar3dProjection(
       scene: initial, size: const Size(520,480),
