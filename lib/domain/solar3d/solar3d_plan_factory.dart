@@ -40,10 +40,10 @@ class Solar3dPlanFactory {
           throw FormatException(
             'Dimensões inválidas para ${scenario.module.modelName}');
         }
-        // The app asks for the distance from the CENTER of the module
-        // to the ground. Never silently raise the module to clear its edge.
-        // A ground collision is a warning in the editor, not a geometry
-        // override. Preserve this physical input in the 3D scene.
+        // SolarScenario and HSP API v2 store the elevation of the CENTRE.
+        // The new UI converts the lower-edge clearance before constructing
+        // the scenario. Preserve existing legacy centre values, rather than
+        // silently migrating saved projects or changing their geometry.
         final elevation = scenario.distanceToGround;
         if (!elevation.isFinite || elevation < 0 || elevation > 500) {
           throw FormatException(

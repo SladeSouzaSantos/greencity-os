@@ -4,6 +4,7 @@ import '../../../../domain/entities/solar_scenario.dart';
 import '../../../../domain/enums/ground_type.dart';
 import '../../../../domain/enums/module_orientation.dart';
 import '../../../../domain/services/hsp_input_validator.dart';
+import '../../../../domain/solar3d/solar3d_panel_height.dart';
 import 'solar_input_field.dart';
 
 class AddScenarioModal extends StatefulWidget {
@@ -87,6 +88,15 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
   /// modules is one SolarArray; modules become individually editable in 3D.
   void _confirmAndAdd() {
     final count = int.parse(quantityController.text.trim());
+    // Public/UI measurement is the lower edge. HSP contract stays centred.
+    final centerElevation = Solar3dPanelHeight.centerFromLowerEdge(
+      lowerEdgeMeters: HspInputValidator.parseNumber(
+          distanceToGroundController.text)!,
+      depthMeters: Solar3dPanelHeight.panelDepthMeters(
+          modalSelectedModule!, selectedOrientation),
+      tiltDegrees: HspInputValidator.parseNumber(
+          inclinationController.text)!,
+    );
     final scenario = SolarScenario(
       id: 'Cenário ${widget.currentScenarioCount + 1} @ '
           '${azimuthController.text}°, ${inclinationController.text}°',
@@ -96,8 +106,7 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
           inclinationController.text)!,
       azimuth: HspInputValidator.parseNumber(azimuthController.text)!,
       albedo: selectedGround.albedo,
-      distanceToGround: HspInputValidator.parseNumber(
-          distanceToGroundController.text)!,
+      distanceToGround: centerElevation,
       module: modalSelectedModule!,
       orientation: selectedOrientation,
       quantityPvModule: count,
@@ -139,9 +148,18 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
               ),
               SolarInputField(
                 controller: distanceToGroundController,
-                label: 'Altura do centro do módulo (m)',
+                label: 'Altura da borda inferior ao solo (m)',
                 icon: Icons.height,
-                validator: HspInputValidator.validateModuleCenterHeight,
+                validator: HspInputValidator.validateModuleLowerEdgeHeight,
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: Text(
+                  'Meça verticalmente do solo à ponta mais baixa da '
+                  'placa inclinada. O aplicativo converte essa medida '
+                  'para a altura do centro exigida pela API HSP.',
+                  style: TextStyle(fontSize: 12),
+                ),
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<GroundType>(

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import '../entities/solar_system.dart';
 import 'solar3d_geometric_shading.dart';
 import 'solar3d_plan_factory.dart';
+import 'solar3d_panel_height.dart';
 
 /// Explicit, session-scoped optical shading estimate from the local 3D scene.
 ///
@@ -169,11 +170,7 @@ class Solar3dOpticalCorrection {
           'Placa ${entry.key}: módulo ou orientação diferentes '
           'do HSP de referência. Refaça o HSP com esses parâmetros.');
       }
-      final tilt = panel.tiltDegrees * math.pi / 180;
-      final lowest = panel.center.y -
-          panel.depth / 2 * math.sin(tilt) -
-          panel.height / 2 * math.cos(tilt);
-      if (lowest < -1e-4) {
+      if (Solar3dPanelHeight.lowerEdgeOf(panel) < -1e-4) {
         throw FormatException(
           'Placa ${entry.key} atravessa o plano do terreno');
       }
