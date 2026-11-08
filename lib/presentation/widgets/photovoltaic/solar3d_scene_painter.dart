@@ -151,6 +151,18 @@ class Solar3dScenePainter extends CustomPainter {
     // Hidden objects still cast shadows; excluded objects do not.
     _paintCastShadows(canvas, view);
 
+    // A tracker number is meaningful only INSIDE its inverter.
+    // Assign a distinct color by (inverterId, mpptIndex), never by
+    // mpptIndex alone: both inverters may correctly have MPPT 1.
+    final inverterIds = <String>[];
+    final trackerKeys = <String>[];
+    for (final panel in scene.objects.where(
+        (o) => o.kind == Solar3dObjectKind.panel)) {
+      final inverterId = panel.id.split('/').first;
+      if (!inverterIds.contains(inverterId)) inverterIds.add(inverterId);
+      final key = '$inverterId/${panel.mpptIndex}';
+      if (!trackerKeys.contains(key)) trackerKeys.add(key);
+    }
     final visible = scene.objects.where((o) =>
         !hiddenIds.contains(o.id)).toList()
       ..sort((a,b) => view.depth(b.center).compareTo(view.depth(a.center)));
@@ -158,13 +170,17 @@ class Solar3dScenePainter extends CustomPainter {
       final selected = object.id == selectedId;
       final excluded = excludedIds.contains(object.id);
       final isPanel = object.kind == Solar3dObjectKind.panel;
-      final index = object.mpptIndex ?? 0;
+      final inverterId = object.id.split('/').first;
+      final trackerKey = '$inverterId/${object.mpptIndex}';
+      final colorIndex = trackerKeys.indexOf(trackerKey);
       final colors = [
         const Color(0xff21a0ba), const Color(0xffa880db),
         const Color(0xffd99554), const Color(0xff78bd71),
+        const Color(0xffca6c91), const Color(0xff57a58b),
+        const Color(0xff7c9ce7), const Color(0xffd4bb63),
       ];
       final base = isPanel
-          ? colors[(index > 0 ? index - 1 : 0) % colors.length]
+          ? colors[(colorIndex < 0 ? 0 : colorIndex) % colors.length]
           : const Color(0xff687989);
       final selectedColor = excluded ? const Color(0xff64707a)
           : isDaylight ? base : Color.lerp(base, Colors.black, .55)!;
@@ -203,8 +219,10 @@ class Solar3dScenePainter extends CustomPainter {
       if (selected || !isPanel) {
         final blocked = directShadeByPanel[object.id];
         final label = isPanel
-            ? '${object.id.split("/").last} · MPPT ${object.mpptIndex}'
-                '${blocked == null ? " · sem feixe" : " · ${(blocked * 100).round()}% sombra"}'
+            ? 'Inv ${inverterIds.indexOf(inverterId) + 1}'
+              ' · placa ${object.id.split("/").last}'
+              ' · MPPT ${object.mpptIndex}'
+              '${blocked == null ? " · sem feixe" : " · ${(blocked * 100).round()}% sombra"}'
             : object.id.length <= 16
                 ? object.id : '${object.id.substring(0, 16)}…';
         final layout = TextPainter(
