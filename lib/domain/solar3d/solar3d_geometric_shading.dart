@@ -209,6 +209,54 @@ class Solar3dGeometricShading {
     );
   }
 
+  /// Raw FRONT-FACE ray samples, retaining the spatial mask for a
+  /// separately documented physical substring/cell layout.
+  ///
+  /// This is an ADDITIONAL read-only experiment: inspectPanel(),
+  /// blockedFraction() and calculate() keep their approved optical
+  /// semantics unchanged. No 3-substring or half-cut layout is assumed.
+  static Solar3dPanelShadowGrid? inspectPanelGrid({
+    required Solar3dObject panel,
+    required Solar3dScene scene,
+    required double sunAzimuthDegrees,
+    required double sunElevationDegrees,
+    required int rows,
+    required int columns,
+  }) {
+    if (panel.kind != Solar3dObjectKind.panel ||
+        rows < 2 || rows > 24 || columns < 2 || columns > 24) {
+      throw const FormatException('Grade espacial fora do limite');
+    }
+    final sunlight = _towardSun(sunAzimuthDegrees, sunElevationDegrees);
+    final basis = _basis(panel);
+    if (sunlight.y <= 0 || sunlight.dot(basis[1]) <= 1e-12) return null;
+    final obstacles = scene.objects.where((o) => o.id != panel.id).toList();
+    final obstacleBasis = obstacles.map(_basis).toList();
+    final blocked = <bool>[];
+    for (var row = 0; row < rows; row++) {
+      for (var col = 0; col < columns; col++) {
+        final point = _toWorld(panel, Solar3dVector(
+          (col + 0.5) * panel.width / columns - panel.width / 2,
+          panel.height / 2 + _eps,
+          (row + 0.5) * panel.depth / rows - panel.depth / 2,
+        ), basis);
+        var hit = false;
+        for (var index = 0; index < obstacles.length; index++) {
+          if (_intersectsBox(point, sunlight, obstacles[index],
+              obstacleBasis[index])) {
+            hit = true;
+            break;
+          }
+        }
+        blocked.add(hit);
+      }
+    }
+    return Solar3dPanelShadowGrid(
+      rows: rows, columns: columns,
+      blocked: List.unmodifiable(blocked),
+    );
+  }
+
   /// Direct-beam front-face blocked AREA fraction; not DC/AC energy loss.
   static double? blockedFraction({
     required Solar3dObject panel,
@@ -284,6 +332,27 @@ class Solar3dGeometricShading {
       ));
     }
     return monthly;
+  }
+}
+
+/// Spatial sampling result, row-major, on the physical front face.
+/// A grid cell is an optical sample, NOT a modeled silicon cell or substring.
+class Solar3dPanelShadowGrid {
+  final int rows, columns;
+  final List<bool> blocked;
+  const Solar3dPanelShadowGrid({
+    required this.rows, required this.columns, required this.blocked,
+  });
+
+  double blockedFractionFor(Iterable<int> sampleIndices) {
+    final indices = sampleIndices.toList();
+    if (indices.isEmpty || blocked.length != rows * columns ||
+        indices.toSet().length != indices.length ||
+        indices.any((i) => i < 0 || i >= blocked.length)) {
+      throw const FormatException('Mapa de amostragem inválido');
+    }
+    return indices.where((index) => blocked[index]).length /
+        indices.length;
   }
 }
 
