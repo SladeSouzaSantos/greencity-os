@@ -13,11 +13,12 @@
   preserva o protótipo Three.js do laboratório **separadamente**;
   nesta etapa o Flutter não embute o editor Three.js. A compatibilidade
   WebGL (Windows/Android) será estudada antes de substituí-lo.
-- GreenCity OS PR #14 ainda não foi integrado a `main`. A nova API HSP
-  está implantada em **DEV** (pipeline #42438742622 aprovado), mas
-  não está comprovada em produção; usar API local/DEV durante testes.
-  CI GreenCity #42441894386 aprovado e Windows homologado pelo
-  relato do usuário. Android físico ainda pendente.
+- O GreenCity OS passou no [CI #42514096789](https://github.com/SladeSouzaSantos/greencity-os/actions/runs/42514096789)
+  (Flutter, build Windows e APK Android). O usuário confirmou o
+  funcionamento no Android, inclusive a seleção múltipla.
+  A integração está vinculada à PR #14; a nova API HSP foi
+  confirmada em **DEV**, e sua disponibilidade no ambiente de
+  destino ainda deve ser verificada operacionalmente.
 
 ## 1. Inicializar a nova API HSP em Windows (PowerShell)
 
@@ -77,7 +78,7 @@ implementação separada da experiência do GreenCity.
 git clone https://github.com/SladeSouzaSantos/greencity-os.git
 cd greencity-os
 git fetch origin
-git switch feature/solar3d-shading-analysis
+git switch main
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
 flutter pub get
 dart run build_runner build --delete-conflicting-outputs
@@ -769,11 +770,11 @@ automaticamente. Não usa um 2026 incompleto.
   físicos, especialmente se o datasheet não permite esse
   agrupamento ou possui somente um MPPT.
 
-**Smoke Android pendente:** trocar MPPT das placas em três inversores,
-abrir/calcular 12 meses, expandir/recolher seções e aplicar a
-correção; não pode haver exceções de `GlobalKey` ou
-`_dependents.isEmpty`. Reabrir a tela **sem** botão de salvar
-e conferir todas as posições e os MPPTs remapeados.
+**Regressão Android recomendada após homologação:** trocar MPPTs
+das placas em três inversores, calcular 12 meses, expandir/recolher
+seções e aplicar a correção. Não devem ocorrer exceções de
+`GlobalKey` ou `_dependents.isEmpty`. Reabrir sem botão de salvar,
+confirmando persistência da cena e dos fatores aplicados.
 
 ## Persistência da correção óptica aplicada (08/11/2026)
 
@@ -875,3 +876,24 @@ preservação dos desníveis; definir altura comum 5,50 m e
 conferir borda inferior/base de cada selecionado; tocar
 **Limpar** e conferir que nenhum objeto fica destacado;
 sair/reabrir para confirmar as posições e os MPPTs originais.
+
+## Distribuição APK Android debug a partir da main
+
+O workflow `.github/workflows/flutter-checks.yml` executa
+`flutter analyze`, `flutter test`, o build Windows e
+`flutter build apk --debug`. O job Android publica o
+`app-debug.apk` via `actions/upload-artifact@v4`, com nome
+`greencity-os-android-debug-apk` na execução de `main`.
+
+Abra **GitHub Actions → Flutter Analyze and Tests → execução da
+main → Artifacts → greencity-os-android-debug-apk**.
+O download gera um ZIP contendo `app-debug.apk`.
+
+É uma compilação **debug para homologação**, não build release
+assinado. O CI prepara um `.env` a partir de `.env.example`
+sem credenciais reais; não incluir chaves no pacote Flutter.
+Um release público exige assinatura e proteção de credenciais.
+
+Após instalar o APK, confira criar inversor/arranjo, editar placas
+e obstáculos, seleção múltipla/altura comum, correção óptica anual,
+reentrada sem edição e persistência do efeito aplicado.
