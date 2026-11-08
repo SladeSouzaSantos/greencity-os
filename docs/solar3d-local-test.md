@@ -95,7 +95,7 @@ No aplicativo, abra um projeto, adicione inversor e módulos, e selecione
 3. Use **Ocultar** para esconder sem afetar a análise;
    **Ignorar na análise** para remover o objeto apenas do raycasting.
    Nenhum deles remove fisicamente uma placa do inversor.
-4. Informe ID de string e MPPT **no estudo** e salve.
+4. Informe ID de string e MPPT **no estudo**. O cenário é salvo automaticamente.
    Feche/reabra a tela: posições/obstáculos devem ser restaurados.
    O dimensionamento elétrico e o orçamento **não** são modificados.
 5. Confirme a API HSP local/pública disponível e abra a seção
@@ -159,7 +159,7 @@ Na tela **ABRIR ANÁLISE 3D**:
   precisas em metros (inclusive negativas em X/Z; vírgula aceita).
   O campo Y é altura. Os botões de deslocamento de 0,25 m continuam
   disponíveis para ajuste fino.
-- Use **Salvar cena** e reabra a tela para conferir persistência.
+- Arraste um objeto e reabra a tela para conferir a persistência automática.
   O movimento modifica apenas a cena de estudo, não o arranjo elétrico
   real no orçamento.
 - Testes automatizados cobrem ida-e-volta da projeção, drag em câmera
@@ -714,3 +714,62 @@ usaram o **mesmo ano** e mostra aquele retornado pelo servidor.
 Com a configuração padrão da fonte NASA POWER, o ano completo mais
 recente é **2024**; assim que a fonte for ampliada, pode avançar
 automaticamente. Não usa um 2026 incompleto.
+
+## Homologação pós-teste Android: GlobalKey, MPPTs e autosave (08/11/2026)
+
+### Erros observados no Android
+
+- Ao editar MPPTs de placas e calcular perdas ópticas, o Flutter
+  reportou `A GlobalKey was used multiple times inside one widget's
+  child list`, citando duas `NotificationListener<ScrollNotification>`.
+  Em seguida, ocorreu `_dependents.isEmpty` ao desmontar a árvore.
+- Para não tentar "consertar" a física por causa de um erro visual,
+  a correção atua no ciclo de vida dos controles: o grupo recolhível
+  deixa de reter `Scrollable`/formulários enquanto está fechado e
+  deixa de usar `ExpansionTile` com estado oculto persistente.
+  O seletor de MPPT usa `DropdownButton<int>` com chave de identidade
+  da placa, sem `DropdownButtonFormField` temporário e chave alterada
+  por cada MPPT. Os dados da seleção permanecem no documento da cena.
+- Nova regressão de widgets combina mudança de MPPT, seção com
+  `SingleChildScrollView` horizontal, fechamento e reabertura
+  sem exceção.
+- A análise óptica de 12 meses e os limites reais por inversor
+  permanecem inalterados; reatribuição de MPPT vale apenas
+  para o estudo 3D e requer MPPT existente no próprio inversor.
+
+### Navegação e persistência
+
+- **MOVER VISTA**: setas esquerda/direita foram invertidas para
+  corresponder ao movimento percebido no Android. As setas
+  cima/baixo já tinham sido corrigidas e foram preservadas.
+- Removidos os botões de salvamento manual do cabeçalho e da
+  lista de objetos. Agora toda modificação válida (obstáculo,
+  altura, posição, azimute, inclinação, MPPT, string, visibilidade
+  e exclusão) gera um salvamento local automático após 350 ms
+  sem edições, com gravações **serializadas** para impedir
+  sobrescritas fora de ordem. Ao sair da tela, a última
+  alteração pendente é gravada. O comando **Resetar análise 3D**
+  continua apagando o documento local após concluir operações
+  anteriores.
+- Salvamento local guarda **apenas a cena**; não guarda resultados
+  de HSP por mês, validação elétrica, ligação física nem uma
+  correção óptica permanente. A modificação de MPPT/geometria
+  invalida corretamente os resultados mensais que foram
+  calculados com a configuração anterior.
+
+### Cenário de microinversores
+
+- Regressão com **3 microinversores**, **4 placas por arranjo** e
+  **MPPT 1 em cada inversor**. Parte das placas é remapeada
+  para o MPPT 2 do **mesmo** microinversor (quando cadastrado);
+  verifica que as doze placas são contabilizadas exatamente uma
+  vez e que o fator óptico não é misturado entre inversores.
+- O teste óptico não certifica a ligação elétrica de microinversores
+  físicos, especialmente se o datasheet não permite esse
+  agrupamento ou possui somente um MPPT.
+
+**Smoke Android pendente:** trocar MPPT das placas em três inversores,
+abrir/calcular 12 meses, expandir/recolher seções e aplicar a
+correção; não pode haver exceções de `GlobalKey` ou
+`_dependents.isEmpty`. Reabrir a tela **sem** botão de salvar
+e conferir todas as posições e os MPPTs remapeados.
