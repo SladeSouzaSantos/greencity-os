@@ -190,3 +190,31 @@ https://solplanet.net/wp-content/uploads/2021/11/Datasheet-ASW-6-10K-S-Series-Gl
   manualmente o sobredimensionamento com o fabricante antes de
   instalação física. A aplicação do HSP óptico não homologa o
   circuito nem calcula perdas DC por clipping.
+
+## 8. Motor elétrico experimental da Fase 2 — PR #20
+
+A Fase 2 deixou de ser apenas um contrato planejado e possui
+**código experimental isolado** em
+[`feature/solar3d-electrical-phase2`](https://github.com/SladeSouzaSantos/greencity-os/pull/20):
+
+- F2.1: solver de diodo simples com cinco parâmetros de origem
+  rastreável, condições de irradiância/temperatura, curva I–V/P–V
+  e circuitos série/paralelo por MPPT.
+- F2.2: substrings e diodos bypass somente com topologia física
+  documentada; máscara espacial de sombra raycast por amostra
+  de face, sem pressupor genericamente três grupos por módulo.
+- F2.3: laboratório de conversão DC/AC horária com eficiência
+  versus carga, limites de MPPT, clipping, perdas I²R e
+  resultados pareados no mesmo clima; não reaplica o fator
+  `Solar3dOpticalCorrection`.
+
+**Ainda não homologado:** coeficientes reais de diodo/strings,
+curvas de inversor, topologia real de células, temperatura de
+célula por hora, eficiência/condutores medidos, conversão
+a séries anuais completas em worker e benchmarking PVsyst.
+O código experimental e os parâmetros cadastrados não modificam
+o cálculo de produção. Por segurança, `electricallyCalibrated`
+permanece `false`.
+
+Ver [Fase 2 detalhada](solar3d-electrical-phase2.md) e
+[epic #16](https://github.com/SladeSouzaSantos/greencity-os/issues/16).

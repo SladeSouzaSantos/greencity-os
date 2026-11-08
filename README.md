@@ -57,7 +57,10 @@ alterar automaticamente as ligações elétricas ou o orçamento original.
 **Limite físico:** os fatores representam perda de **irradiância**,
 não uma simulação certificada de curvas I–V, bypass, mismatch,
 cabos ou perdas DC/AC. A [fase elétrica #16](https://github.com/SladeSouzaSantos/greencity-os/issues/16)
-segue separada.
+está em desenvolvimento **experimental** na [PR #20](https://github.com/SladeSouzaSantos/greencity-os/pull/20).
+O novo motor não substitui a geração existente; exige parâmetros
+calibrados, topologia de substrings verificada e comparação externa.
+Ver [progresso técnico da Fase 2](docs/solar3d-electrical-phase2.md).
 
 ### API HSP horária
 
