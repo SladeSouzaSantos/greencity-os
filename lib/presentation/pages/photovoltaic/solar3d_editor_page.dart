@@ -13,6 +13,7 @@ import '../../../domain/entities/solar_system.dart';
 import '../../../domain/solar3d/solar3d_geometric_shading.dart';
 import '../../../domain/solar3d/solar3d_plan_factory.dart';
 import '../../../domain/solar3d/solar3d_panel_height.dart';
+import '../../../domain/solar3d/solar3d_study_string_suggestions.dart';
 import '../../../domain/solar3d/solar3d_optical_correction.dart';
 import '../../../domain/solar3d/solar3d_electrical_audit.dart';
 import '../../../domain/solar3d/solar3d_scene_document.dart';
@@ -616,6 +617,55 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   /// It changes only the monthly energy-estimate overlay in this session.
   /// The actual electrical topology, production and quote are not silently
   /// rewritten; no string mismatch/bypass yield is asserted.
+  Future<void> _suggestStudyStrings() async {
+    final doc = document;
+    if (doc == null || busy) return;
+    final missing = Solar3dStudyStringSuggestions.missingCount(doc.scene);
+    if (missing == 0) {
+      _notice('Todas as placas já têm uma string informada.');
+      return;
+    }
+    final revision = sceneRevision;
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Sugerir strings apenas para estudo?'),
+        content: Text(
+          'As $missing placa(s) ainda sem string receberão um '
+          'identificador experimental. Placas do mesmo arranjo '
+          'original E do mesmo MPPT 3D serão agrupadas em uma '
+          'string hipotética em série.\\n\\n'
+          'Isso NÃO confirma a quantidade real de strings, '
+          'as conexões físicas ou a viabilidade do inversor. '
+          'Revise os resultados da auditoria e valide com '
+          'o projeto elétrico antes de executar a instalação.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Gerar strings de estudo'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || approved != true || revision != sceneRevision) return;
+    try {
+      final updated = Solar3dStudyStringSuggestions.fillMissing(doc.scene);
+      _changeDocument(Solar3dSceneDocument(
+        scene: updated,
+        hiddenIds: doc.hiddenIds,
+        excludedIds: doc.excludedIds,
+      ));
+      _auditElectrical();
+    } on FormatException catch (error) {
+      _notice(error.message);
+    }
+  }
+
   void _auditElectrical() {
     final doc = document;
     if (doc == null) return;
@@ -662,6 +712,20 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             icon: const Icon(Icons.fact_check_outlined),
             label: const Text('VALIDAR STRINGS E LIMITES DO INVERSOR'),
           ),
+          if (document != null &&
+              Solar3dStudyStringSuggestions.missingCount(
+                  document!.scene) > 0) ...[
+            const Text(
+              'As mensagens UNASSIGNED_STRING são avisos de '
+              'configuração incompleta, não erros de cálculo.',
+              style: TextStyle(fontSize: 12),
+            ),
+            OutlinedButton.icon(
+              onPressed: busy ? null : _suggestStudyStrings,
+              icon: const Icon(Icons.auto_fix_high_outlined),
+              label: const Text('SUGERIR STRINGS PARA ESTUDO'),
+            ),
+          ],
           if (report != null) ...[
             Text(
               'Placas com string: ${report.assignedPanels}/'
@@ -675,8 +739,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             if (!report.topologyComplete)
-              const Text('Preencha o ID de string de todas as placas '
-                  'para auditar a topologia completa.'),
+              const Text('Identifique as strings em cada placa '
+                  'ou use a sugestão experimental acima; '
+                  'isso não representa a ligação elétrica real.'),
             for (final tracker in report.trackers)
               ExpansionTile(
                 title: Text(
