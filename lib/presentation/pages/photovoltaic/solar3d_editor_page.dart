@@ -346,7 +346,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         content: Text(
           'O cadastro antigo considerava a altura do CENTRO, '
           'o que colocou ${candidates.length} placa(s) parcialmente '
-          'abaixo do solo no estudo 3D.\\n\\n'
+          'abaixo do solo no estudo 3D.\n\n'
           'Com sua confirmação, o mesmo número em metros '
           'será interpretado como a altura da BORDA INFERIOR '
           'para essas placas. As posições X/Z, MPPTs, strings '
@@ -708,7 +708,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           'As $missing placa(s) ainda sem string receberão um '
           'identificador experimental. Placas do mesmo arranjo '
           'original E do mesmo MPPT 3D serão agrupadas em uma '
-          'string hipotética em série.\\n\\n'
+          'string hipotética em série.\n\n'
           'Isso NÃO confirma a quantidade real de strings, '
           'as conexões físicas ou a viabilidade do inversor. '
           'Revise os resultados da auditoria e valide com '
@@ -920,7 +920,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               'Não é possível aplicar à geração projetada uma '
               'topologia completa que viola limites do inversor.\n\n'
               '${blocking.take(6).map((f) =>
-                "${f.scope}: ${f.message}").join("\\n")}\\n\\n'
+                "${f.scope}: ${f.message}").join("\\n")}\n\n'
               'Corrija a quantidade de módulos em série/MPPT, '
               'as correntes e as strings. A análise de HSP óptico '
               'permanece disponível para estudo.',
