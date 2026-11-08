@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:greencity_os/domain/entities/inverter.dart';
 import 'package:greencity_os/domain/entities/pv_module.dart';
@@ -13,6 +15,8 @@ import 'package:greencity_os/domain/solar3d/solar3d_geometric_shading.dart';
 import 'package:greencity_os/domain/solar3d/solar3d_optical_correction.dart';
 import 'package:greencity_os/domain/solar3d/solar3d_electrical_audit.dart';
 import 'package:greencity_os/domain/solar3d/solar3d_plan_factory.dart';
+import 'package:greencity_os/data/datasources/solar3d_scene_storage.dart';
+import 'package:greencity_os/domain/solar3d/solar3d_scene_document.dart';
 
 void main() {
   List<SolarSystem> systems({
@@ -93,6 +97,102 @@ void main() {
         systems: list, scene: Solar3dPlanFactory.fromSystems(list),
         monthly: samples, yearUtc: 2024,
       );
+
+  test('Correção 3D confirmada sobrevive à reabertura sem recalcular HSP',
+      () async {
+    final dir = await Directory.systemTemp.createTemp('greencity-3d-optical-');
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+    final list = systems();
+    final scene = Solar3dPlanFactory.fromSystems(list);
+    final doc = Solar3dSceneDocument(scene: scene);
+    final calculated = make(list, yearResults(list));
+    final store = Solar3dSceneStorage('optical-project', rootDirectory: dir);
+    await store.save(doc);
+    await store.saveAppliedCorrection(scene: doc, correction: calculated);
+
+    final reopened = Solar3dSceneStorage(
+        'optical-project', rootDirectory: dir);
+    final restored = await reopened.loadAppliedCorrection(systems: list);
+    expect(restored, isNotNull);
+    expect(restored!.weatherYearUtc, 2024);
+    expect(restored.panelCount, 4);
+    expect(restored.designSignature, calculated.designSignature);
+    for (final system in calculated.retentionBySystemMppt.entries) {
+      for (final mppt in system.value.keys) {
+        for (var month = 0; month < 12; month++) {
+          expect(restored.retention(system.key, mppt, month),
+              calculated.retention(system.key, mppt, month));
+        }
+      }
+    }
+    final project = SolarProject(
+      clientName: 'C', city: 'Natal', state: 'RN',
+      latitude: -5.8, longitude: -35.2,
+      monthlyConsumption: 500, systems: list,
+    )..opticalCorrection = restored;
+    expect(project.hasAppliedOpticalCorrection, true);
+    expect(project.totalMonthlyGeneration[0],
+        lessThan(project.baselineMonthlyGeneration[0]));
+    // Merely reopening/saving an unchanged scene preserves the factors.
+    await reopened.save(doc);
+    expect((await reopened.loadAppliedCorrection(systems: list))
+        ?.retention('SYS', 1, 0), closeTo(.75, 1e-12));
+  });
+
+  test('Alteração de geometria, MPPT ou projeto invalida perda persistida',
+      () async {
+    final dir = await Directory.systemTemp.createTemp('greencity-3d-optical-');
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+    final list = systems();
+    final scene = Solar3dPlanFactory.fromSystems(list);
+    final original = Solar3dSceneDocument(scene: scene);
+    final correction = make(list, yearResults(list));
+    final store = Solar3dSceneStorage('mismatch', rootDirectory: dir);
+    await store.save(original);
+    await store.saveAppliedCorrection(scene: original, correction: correction);
+
+    final moved = Solar3dSceneDocument(scene: Solar3dScene(
+      scene.objects.map((p) => p.id == 'SYS/1/1'
+          ? p.copyWith(center: const Solar3dVector(10, 1, 0)) : p)
+          .toList()));
+    await store.save(moved);
+    expect(await store.loadAppliedCorrection(systems: list), isNull);
+
+    await store.save(original);
+    await store.saveAppliedCorrection(scene: original, correction: correction);
+    list.first.arrays.first.mpptIndex = 2;
+    expect(await store.loadAppliedCorrection(systems: list), isNull);
+
+    await store.clearAppliedCorrection();
+    expect(await store.loadAppliedCorrection(systems: list), isNull);
+    expect(await store.load(), isNotNull);
+    await store.clear();
+    expect(await store.load(), isNull);
+  });
+
+  test('Versões/correções adulteradas falham com segurança', () {
+    final corrected = make(systems(), yearResults(systems()));
+    final json = corrected.toJson();
+    expect(Solar3dOpticalCorrection.fromJson(json)
+        .retention('SYS', 1, 0), closeTo(.75, 1e-12));
+    expect(() => Solar3dOpticalCorrection.fromJson({
+      ...json, 'schema_version': 999,
+    }), throwsFormatException);
+    final broken = Map<String, dynamic>.from(json);
+    final groups = Map<String, dynamic>.from(broken['groups'] as Map);
+    final sys = Map<String, dynamic>.from(groups['SYS'] as Map);
+    final mppt = Map<String, dynamic>.from(sys['1'] as Map);
+    mppt['retention_monthly'] = List.filled(11, .9);
+    sys['1'] = mppt;
+    groups['SYS'] = sys;
+    broken['groups'] = groups;
+    expect(() => Solar3dOpticalCorrection.fromJson(broken),
+        throwsFormatException);
+  });
 
   test('Uma só correção óptica por MPPT, média ponderada de placas', () {
     final list = systems();
