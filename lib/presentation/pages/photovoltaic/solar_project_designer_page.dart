@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:isar/isar.dart';
@@ -19,6 +21,7 @@ import '../../widgets/photovoltaic/project/solar_system_card.dart';
 import 'quote_details_page.dart';
 import 'solar3d_editor_page.dart';
 import '../../../domain/solar3d/solar3d_optical_correction.dart';
+import '../../../data/datasources/solar3d_scene_storage.dart';
 
 class SolarProjectDesignerPage extends StatefulWidget {
   final SolarProject project;
@@ -37,11 +40,54 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
   String? selectedInverterManufacturer;
   Inverter? selectedInverter;
   List<Inverter> allInverters = [];
+  int _opticalLoadRevision = 0;
+
+  Solar3dSceneStorage get _sceneStorage =>
+      Solar3dSceneStorage.forProject(widget.project, systems);
+
+  /// Restore only when the scene, equipment and HSP reference match.
+  Future<void> _restoreAppliedCorrection() async {
+    if (systems.isEmpty || widget.project.hasAppliedOpticalCorrection) {
+      return;
+    }
+    final revision = _opticalLoadRevision;
+    final signature = Solar3dOpticalCorrection.signatureFor(systems);
+    try {
+      final applied = await _sceneStorage.loadAppliedCorrection(
+          systems: systems);
+      if (!mounted || revision != _opticalLoadRevision ||
+          signature != Solar3dOpticalCorrection.signatureFor(systems) ||
+          widget.project.opticalCorrection != null || applied == null) {
+        return;
+      }
+      setState(() {
+        widget.project.systems = systems;
+        widget.project.opticalCorrection = applied;
+      });
+    } catch (error) {
+      debugPrint('Solar3D correction restore skipped: $error');
+    }
+  }
+
+  Future<void> _clearAppliedCorrection() async {
+    try {
+      await _sceneStorage.clearAppliedCorrection();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Não foi possível limpar a correção local: $error'),
+        ));
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-
+    systems = widget.project.systems;
+    if (systems.isNotEmpty) {
+      unawaited(_restoreAppliedCorrection());
+    }
     _loadInitialData();
 
     final placeholderModule = PvModule(
@@ -197,8 +243,10 @@ class _SolarProjectDesignerPageState extends State<SolarProjectDesignerPage> {
     }
     
     widget.project.systems = systems;
-    // Recalculating the original HSP invalidates an applied 3D scenario.
+    // Recalculating the HSP invalidates old factors, not the 3D scene.
+    _opticalLoadRevision++;
     widget.project.opticalCorrection = null;
+    unawaited(_clearAppliedCorrection());
 
     // 2. Criamos uma lista única de cenários para o BLoC calcular
     // O BLoC precisa de List<SolarScenario> para processar a radiação
