@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Isar 3.1.0+1 has an empty library manifest with an obsolete package
+  attribute. This equivalent manifest is used only for its Android library.
+  Keep in sync if the dependency adds required manifest declarations.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

@@ -82,8 +82,9 @@ ou usada como previsão AC de projeto executável.
 - [x] Múltiplos inversores podem ter a mesma ID de string sem
   interconexão acidental.
 - [x] Flutter Analyze + testes rodados em Linux no CI.
-- [ ] Compilação e testes Windows de CI: nova job adicionada,
-  acompanhar resultado antes de marcar como concluída.
+- [x] Compilação e testes Windows de CI: aprovada no SHA `0a175922`.
+- [ ] Compilação APK Android de CI: aguardando validação do manifesto
+  compatível com AGP no `isar_flutter_libs 3.1.0+1`.
 - [ ] Smoke manual Windows em hardware real para salvar/resetar/analisar
   com tela grande e arrasto/zoom.
 - [ ] Smoke manual Android (toque, pinça, persistência, desempenho).
@@ -145,3 +146,18 @@ de simulação. `Solar3dStudyStringSuggestions` propõe apenas
 **ligações hipotéticas de estudo**, com aceite manual e revisão
 posterior da auditoria. Nenhuma recomendação automática estabelece
 o número real de strings do sistema.
+
+## Compatibilidade Isar/Android — correção em homologação
+
+O Android Gradle Plugin exige namespace explícito e não aceita mais o
+atributo `package` dentro do manifesto de bibliotecas. O Isar 3.1.0+1
+possui manifesto de biblioteca vazio (exceto namespaces XML e o atributo
+`package="dev.isar.isar_flutter_libs"`). O arquivo versionado
+`android/compat/isar_flutter_libs/AndroidManifest.xml` fornece o
+manifesto vazio equivalente sem o atributo obsoleto. O projeto Android
+registra `namespace` e redireciona somente `main.manifest` desse plugin
+via callback `com.android.library`; não altera o pub-cache.
+
+Critério de aceite: job `Android debug APK build` inteiramente verde,
+seguida de smoke em Android físico. A correção não prova, por si só, que
+persistência Isar, seleção 3D ou gesto pinça funcionem no dispositivo.

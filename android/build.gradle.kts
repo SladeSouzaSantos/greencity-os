@@ -38,6 +38,27 @@ subprojects {
             if (getter.invoke(androidExtension) == null) {
                 setter.invoke(androidExtension, "io.isar.isar_flutter_libs")
             }
+
+            // Isar 3.1.0+1 also declares the obsolete 'package' attribute
+            // in its library AndroidManifest.xml. AGP >= 8 rejects it even
+            // when a namespace has been configured. Override ONLY the
+            // otherwise-empty library manifest with a version-controlled
+            // equivalent without package; never edit pub-cache at runtime.
+            val sourceSets = androidExtension.javaClass
+                .getMethod("getSourceSets").invoke(androidExtension)
+                as org.gradle.api.NamedDomainObjectContainer<*>
+            val mainSourceSet = sourceSets.getByName("main")
+            val manifest = mainSourceSet.javaClass
+                .getMethod("getManifest").invoke(mainSourceSet)
+            val manifestFile = rootProject.file(
+                "compat/isar_flutter_libs/AndroidManifest.xml")
+            check(manifestFile.isFile) {
+                "Missing version-controlled Isar manifest: $manifestFile"
+            }
+            val srcFile = manifest.javaClass.methods.firstOrNull {
+                it.name == "srcFile" && it.parameterCount == 1
+            } ?: error("Cannot configure Isar main manifest source")
+            srcFile.invoke(manifest, manifestFile)
         }
     }
 }

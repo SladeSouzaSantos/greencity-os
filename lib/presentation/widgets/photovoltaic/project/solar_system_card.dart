@@ -208,7 +208,7 @@ class SolarSystemCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                "⚠ Perda por mismatch: ${mismatchLoss.toStringAsFixed(1)}% (Verifique o MPPT!)",
+                "⚠ Redução de HSP por agrupamento do MPPT: ${mismatchLoss.toStringAsFixed(1)}% (aproximação óptica, não perda elétrica I-V)",
                 style: const TextStyle(fontSize: 10, color: Colors.orange, fontWeight: FontWeight.bold),
               ),
             ),
