@@ -89,7 +89,9 @@ class _Solar3dTouchSurfaceState extends State<Solar3dTouchSurface> {
       final previousAngle = _previousAngle;
       _rebasePair();
       if (previousFocal == null || previousDistance == null ||
-          previousAngle == null) return;
+          previousAngle == null) {
+        return;
+      }
       final scale = previousDistance > 1e-3
           ? distance / previousDistance : 1.0;
       var rotation = angle - previousAngle;
