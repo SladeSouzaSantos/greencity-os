@@ -11,6 +11,7 @@ import 'package:greencity_os/domain/enums/inverter_type.dart';
 import 'package:greencity_os/domain/enums/grid_connection.dart';
 import 'package:greencity_os/domain/solar3d/solar3d_geometric_shading.dart';
 import 'package:greencity_os/domain/solar3d/solar3d_optical_correction.dart';
+import 'package:greencity_os/domain/solar3d/solar3d_electrical_audit.dart';
 import 'package:greencity_os/domain/solar3d/solar3d_plan_factory.dart';
 
 void main() {
@@ -272,6 +273,80 @@ void main() {
       systems: list, scene: invalid,
       monthly: yearResults(list), yearUtc: 2024,
     ), throwsFormatException);
+  });
+
+  test('Auditoria elétrica: MPPT subdimensionado não é geração válida', () {
+    final list = systems();
+    final base = Solar3dPlanFactory.fromSystems(list);
+    final scene = Solar3dScene(base.objects.map((panel) {
+      // MPPT 1 has two 1-module parallel strings: 41 V < 50 V,
+      // and 24 A > the MPPT 20 A limit. MPPT 2 is a valid pair in series.
+      final string = panel.id == 'SYS/1/1' ? 'S1' :
+          panel.id == 'SYS/1/2' ? 'S2' : 'S3';
+      return panel.copyWith(stringId: string);
+    }).toList());
+    final report = Solar3dElectricalAudit.inspect(
+      systems: list, scene: scene, minimumAmbientC: -10);
+    expect(report.topologyComplete, true);
+    expect(report.hasBlockers, true);
+    expect(report.trackers.length, 2);
+    expect(report.findings.any((f) =>
+      f.code == 'MPPT_UNDERVOLTAGE'), true);
+    expect(report.findings.any((f) =>
+      f.code == 'MPPT_CURRENT'), true);
+    expect(report.findings.any((f) =>
+      f.code == 'COLD_VOC_UNAVAILABLE'), false);
+    final first = report.trackers.firstWhere((t) => t.mpptIndex == 1);
+    expect(first.parallelImpStcA, 24);
+    expect(first.parallelIscStcA, 26);
+  });
+
+  test('Auditoria elétrica não confunde string S1 de outro inversor', () {
+    final first = systems().first;
+    final second = SolarSystem(
+      id: 'SYS-OTHER', name: 'Inversor 2', inverter: first.inverter,
+      arrays: [first.arrays.first],
+    );
+    final list = [first, second];
+    final base = Solar3dPlanFactory.fromSystems(list);
+    final scene = Solar3dScene(base.objects.map((panel) =>
+      panel.copyWith(stringId: panel.mpptIndex == 1 ? 'S1' : 'S2'))
+        .toList());
+    final report = Solar3dElectricalAudit.inspect(
+      systems: list, scene: scene, minimumAmbientC: -5);
+    expect(report.topologyComplete, true);
+    expect(report.findings.any((f) =>
+      f.code == 'STRING_CROSSES_MPPTS'), false);
+    expect(report.trackers.where((t) => t.mpptIndex == 1).length, 2);
+    expect(report.trackers.map((t) => t.inverterId).toSet(),
+      {'SYS', 'SYS-OTHER'});
+    expect(report.trackers
+        .where((t) => t.inverterId == 'SYS-OTHER')
+        .single.strings.single.moduleCount, 2);
+  });
+
+  test('Auditoria detecta string atravessando dois MPPTs', () {
+    final list = systems();
+    final base = Solar3dPlanFactory.fromSystems(list);
+    final scene = Solar3dScene(base.objects.map((panel) =>
+      panel.copyWith(stringId: 'SAME')).toList());
+    final report = Solar3dElectricalAudit.inspect(
+      systems: list, scene: scene, minimumAmbientC: -5);
+    expect(report.findings.any((f) =>
+      f.code == 'STRING_CROSSES_MPPTS'), true);
+  });
+
+  test('Sem IDs de string, não finge conhecer circuito elétrico', () {
+    final list = systems();
+    final report = Solar3dElectricalAudit.inspect(
+      systems: list,
+      scene: Solar3dPlanFactory.fromSystems(list));
+    expect(report.assignedPanels, 0);
+    expect(report.topologyComplete, false);
+    expect(report.trackers, isEmpty);
+    expect(report.electricallyCalibrated, false);
+    expect(report.findings.any((f) =>
+      f.code == 'COLD_VOC_UNAVAILABLE'), true);
   });
 
   test('Rejeita placa omitida e expira quando altera arranjo', () {
