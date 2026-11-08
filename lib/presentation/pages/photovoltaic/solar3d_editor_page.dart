@@ -1522,6 +1522,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                         selectedId: selectedId,
                         selectedIds: multiSelectMode
                             ? {...selectedIds} : const {},
+                        multipleSelection: multiSelectMode,
                         yaw: yaw, pitch: pitch, zoom: zoom,
                         cameraPan: cameraPan,
                         showCompass: false,

@@ -236,6 +236,7 @@ class Solar3dScenePainter extends CustomPainter {
   final Set<String> excludedIds;
   final String? selectedId;
   final Set<String> selectedIds;
+  final bool multipleSelection;
   final double yaw, pitch, zoom;
   final Offset cameraPan;
   final bool showCompass;
@@ -245,7 +246,7 @@ class Solar3dScenePainter extends CustomPainter {
   Solar3dScenePainter({
     required this.scene, this.frameScene, required this.hiddenIds,
     required this.excludedIds, required this.selectedId,
-    this.selectedIds = const {},
+    this.selectedIds = const {}, this.multipleSelection = false,
     required this.yaw, required this.pitch, required this.zoom,
     this.cameraPan = Offset.zero, this.showCompass = true,
     required this.sunAzimuthDegrees, required this.sunElevationDegrees,
@@ -309,7 +310,7 @@ class Solar3dScenePainter extends CustomPainter {
         !hiddenIds.contains(o.id)));
     for (final surface in faces) {
       final object = surface.object;
-      final selected = selectedIds.isNotEmpty
+      final selected = multipleSelection
           ? selectedIds.contains(object.id) : object.id == selectedId;
       final excluded = excludedIds.contains(object.id);
       final isPanel = object.kind == Solar3dObjectKind.panel;
@@ -534,6 +535,7 @@ class Solar3dScenePainter extends CustomPainter {
       old.scene != scene || old.hiddenIds != hiddenIds ||
       old.excludedIds != excludedIds || old.selectedId != selectedId ||
       old.selectedIds != selectedIds ||
+      old.multipleSelection != multipleSelection ||
       old.frameScene != frameScene ||
       old.yaw != yaw || old.pitch != pitch || old.zoom != zoom ||
       old.cameraPan != cameraPan || old.showCompass != showCompass ||
