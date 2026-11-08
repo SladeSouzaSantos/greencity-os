@@ -1154,9 +1154,13 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     final translated = current.copyWith(center: Solar3dVector(
       x, current.center.y, z,
     ));
-    _replace(current.kind == Solar3dObjectKind.panel
-        ? Solar3dPanelHeight.withLowerEdge(translated, y)
-        : translated.copyWith(center: Solar3dVector(x, y, z)));
+    try {
+      _replace(current.kind == Solar3dObjectKind.panel
+          ? Solar3dPanelHeight.withLowerEdge(translated, y)
+          : translated.copyWith(center: Solar3dVector(x, y, z)));
+    } on FormatException catch (error) {
+      _notice(error.message);
+    }
   }
 
   void _reframe() {

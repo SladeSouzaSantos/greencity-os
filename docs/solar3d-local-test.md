@@ -110,6 +110,11 @@ explicitamente o acesso HTTP local de desenvolvimento se necessário.
 Não habilite cleartext global para produção. Primeiro homologue
 a integração no Windows.
 
+A elevação informada no editor é a altura da borda inferior da placa.
+Se o centro resultante exceder o limite geométrico da cena (500 m),
+a interface apresenta erro de validação e mantém o posicionamento
+anterior, sem encerrar a tela.
+
 ## Limitações/segurança
 
 - O editor desta entrega usa **renderização volumétrica nativa Flutter**,

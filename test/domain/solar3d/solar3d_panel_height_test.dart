@@ -35,6 +35,19 @@ void main() {
     expect(Solar3dPanelHeight.lowerEdgeOf(grounded), closeTo(0, 1e-12));
   });
 
+  test('borda nominal no limite pode exceder altitude máxima do centro', () {
+    expect(
+      () => Solar3dPanelHeight.centerFromLowerEdge(
+        lowerEdgeMeters: 500, depthMeters: 2, tiltDegrees: 20),
+      throwsFormatException,
+    );
+    expect(
+      Solar3dPanelHeight.centerFromLowerEdge(
+        lowerEdgeMeters: 499, depthMeters: 1, tiltDegrees: 0),
+      greaterThan(499),
+    );
+  });
+
   test('valor negativo rejeitado e altura de cena legada não é reinterpretada', () {
     expect(() => Solar3dPanelHeight.centerFromLowerEdge(
       lowerEdgeMeters: -.01, depthMeters: 2, tiltDegrees: 20),
