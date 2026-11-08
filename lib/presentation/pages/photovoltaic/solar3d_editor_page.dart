@@ -46,6 +46,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Timer? _autosaveTimer;
   Future<void> _storageWriteQueue = Future<void>.value();
   bool _sceneEdited = false;
+  bool _correctionInvalidated = false;
 
   /// Every geometry/MPPT change auto-persists locally, without storing the
   /// temporary optical monthly results or changing the production circuit.
@@ -77,13 +78,21 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Future<void> _flushSceneAutosave(Solar3dSceneDocument snapshot) {
     _autosaveTimer?.cancel();
     _autosaveTimer = null;
-    return _queueSceneSave(snapshot);
+    final destination = storage!;
+    // Application is a confirmed transaction: propagate disk errors to
+    // the caller instead of reporting success without saved geometry.
+    final write = _storageWriteQueue.then((_) => destination.save(snapshot));
+    _storageWriteQueue = write.catchError((Object error) {
+      debugPrint('Solar3D commit failed: $error');
+    });
+    return write;
   }
 
   Future<void> _clearSceneStorage() {
     _autosaveTimer?.cancel();
     _autosaveTimer = null;
     _sceneEdited = false;
+    _correctionInvalidated = true;
     final destination = storage!;
     _storageWriteQueue = _storageWriteQueue.then(
       (_) => destination.clear(),
@@ -145,13 +154,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       catalogInitialScene = scene;
       selectedId = scene.objects.firstWhere((o) =>
           o.kind == Solar3dObjectKind.panel).id;
-      storage = Solar3dSceneStorage([
-        widget.project.clientName, widget.project.city,
-        widget.project.state,
-        widget.project.latitude.toStringAsFixed(6),
-        widget.project.longitude.toStringAsFixed(6),
-        ...widget.systems.map((s) => s.id),
-      ].join('|'));
+      storage = Solar3dSceneStorage.forProject(
+          widget.project, widget.systems);
       _loadSaved();
     } on FormatException catch (err) {
       initError = err.message;
@@ -342,6 +346,20 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
 
   void _changeDocument(Solar3dSceneDocument next) {
     next.scene.validate();
+    // Any real scene or MPPT edit invalidates the previously APPLIED
+    // 12-month scenario; merely opening the editor does not.
+    widget.project.opticalCorrection = null;
+    if (!_correctionInvalidated && storage != null) {
+      _correctionInvalidated = true;
+      final destination = storage!;
+      _storageWriteQueue = _storageWriteQueue.then((_) async {
+        try {
+          await destination.clearAppliedCorrection();
+        } catch (error) {
+          debugPrint('Solar3D optical invalidation failed: $error');
+        }
+      });
+    }
     setState(() {
       document = next;
       monthly = {};
@@ -1105,10 +1123,19 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         ),
       );
       if (!mounted || confirm != true) return;
-      // Applying the scenario also persists its geometry and per-panel
-      // assignment locally; otherwise reopening the editor would restore
-      // the previous layout even while the session uses the new ratios.
+      // The Apply button is the ONLY commit point for monthly factors.
+      // Persist the exact scene first; then bind the factors to that
+      // snapshot and the current electrical/HSP signature.
       await _flushSceneAutosave(doc);
+      final destination = storage!;
+      final saveCorrection = _storageWriteQueue.then((_) =>
+          destination.saveAppliedCorrection(
+              scene: doc, correction: correction));
+      _storageWriteQueue = saveCorrection.catchError((Object error) {
+        debugPrint('Solar3D optical commit failed: $error');
+      });
+      await saveCorrection;
+      _correctionInvalidated = false;
       if (!mounted) return;
       Navigator.pop(context, correction);
     } on FormatException catch (error) {
