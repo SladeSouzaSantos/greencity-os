@@ -159,16 +159,24 @@ Na tela **ABRIR ANÁLISE 3D**:
 **Limitação:** a vista Flutter nativa continua sendo projeção 3D
 simplificada e não um ambiente Three.js com seleção/perspectiva GPU completa.
 
-## Editor 3D — centro do módulo, touch e ciclo solar (2026-11-07)
+## Editor 3D — referência de altura na borda inferior, touch e ciclo solar
 
-1. **Altura do centro ao solo:** a configuração original
-   `SolarScenario.distanceToGround` é respeitada literalmente como o
-   valor Y do centro de cada módulo. O editor não eleva a placa
-   automaticamente com base na inclinação. Se uma borda atravessar
-   o terreno, aparece um aviso geométrico e deve-se revisar o layout.
-   Em cenas antigas já salvas, o editor preserva a altura editada e
-   oferece **Usar altura do centro cadastrada** para reaplicar o valor
-   do projeto sem apagar as demais posições.
+1. **Altura da borda inferior ao solo (08/11/2026):** o usuário informa
+   sempre a folga **vertical desde o terreno até o ponto mais baixo** da
+   placa inclinada. `0,15 m` significa 15 cm livres sob a borda inferior,
+   não 15 cm para o centro. O aplicativo calcula automaticamente:
+   `Y_centro = Y_borda + (comprimento_inclinado/2)*sin(tilt) +
+   (espessura/2)*cos(tilt)`. A altura interna e o campo
+   `distancia_centro_modulo_chao` da API HSP v2 continuam sendo
+   altura do **centro** (contrato preservado). A espessura volumétrica
+   usada na prévia de módulos é de 0,045 m.
+   Em cenas legadas, posições e dimensões 3D salvas permanecem com
+   sua coordenada central original; **não há deslocamento silencioso**.
+   Ao selecionar uma placa, o editor exibe a altura equivalente da borda,
+   permite **Editar coordenadas X / Z / Y** (Y da placa = borda inferior)
+   e oferece **Elevar borda inferior a 0 m** se a placa atravessar o solo.
+   O botão de restauração usa a borda inferior do cadastro e alterar
+   a inclinação preserva a folga da borda.
 2. **Navegação:** toque/arraste sobre uma placa ou obstáculo para mover
    no terreno X/Z mantendo Y. Toque/arraste no terreno vazio para
    **girar a câmera**. Com dois dedos, **pinça para zoom e giro**;
@@ -459,3 +467,41 @@ de obstáculos.
 óptico, não é um circuito validado, um string design nem uma
 estimativa AC confiável. Os testes automatizados não substituem
 homologação visual e comparação com medições/PVsyst.
+
+### Identificação de strings e avisos UNASSIGNED_STRING (08/11/2026)
+
+O contador **Placas com string 0/8 · 0 bloqueios · 8 avisos** significa
+que existem oito placas sem ID de string definido. Isso não é erro de API
+nem falha do cálculo geométrico. É falta de topologia para auditar
+Voc/Vmp/Imp/Isc **em série/paralelo**.
+
+Duas opções:
+- Selecionar cada placa e definir o campo **String da placa — estudo**,
+  indicando a mesma string para os módulos realmente conectados em série;
+- Usar **SUGERIR STRINGS PARA ESTUDO**, confirmar a hipótese e revisar
+  o resultado. A proposta agrupa placas do mesmo arranjo original
+  **e do mesmo MPPT 3D** em uma string hipotética `ESTUDO-ARRx-MPPTy`.
+  O mesmo nome em inversores diferentes não mistura seus circuitos.
+
+Após preencher, execute novamente **VALIDAR STRINGS E LIMITES DO INVERSOR**.
+As sugestões não mudam o circuito Isar, nem provam instalação viável.
+Uma string com apenas uma placa poderá ser bloqueada por tensão de
+partida/MPPT insuficiente.
+
+**Não confundir:** os 786/638 kWh exibidos no exemplo da interface
+representam geração-base versus previsão **óptica**, não rendimentos
+DC/AC calculados. O arranjo elétrico da obra requer datasheet e análise
+específica antes de instalar.
+
+### Testes de regressão da altura
+
+- Inclinação de 20°, módulo de 2 m em retrato, altura de borda de
+  0,15 m: centro aproximadamente 0,513 m (espessura 45 mm).
+- Inclinação zero e borda de 0 m: centro fica a meia espessura
+  do painel, sem cruzar o solo.
+- Alteração da inclinação de 20° para 40° não modifica a
+  altura da borda inferior escolhida.
+- Cenário antigo com centro em 0,15 m continua com a
+  coordenada armazenada; o usuário decide quando reajustar a borda.
+- A API HSP continua recebendo `distancia_centro_modulo_chao` e
+  não ganha campos de obstáculo.

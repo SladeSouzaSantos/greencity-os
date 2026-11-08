@@ -131,3 +131,17 @@ do smoke Windows/Android, build Windows, e fechamento do escopo
 **óptico**. A fase **elétrica** permanece identificada separadamente
 na issue #16; nenhuma perda elétrica não validada será embutida
 automaticamente na geração estimada.
+
+## Correção de referência de altura e strings sugeridas (08/11/2026)
+
+O formulário de adicionar módulos e a tela 3D passam a apresentar
+**altura da borda inferior ao solo** para placas, convertendo
+internamente para a altura do **centro** exigida pelo backend HSP.
+Não altera posições de projetos/cenas antigos sem ação explícita.
+O HSP de produção permanece intacto.
+
+Mensagens `UNASSIGNED_STRING` são avisos de preenchimento, não falhas
+de simulação. `Solar3dStudyStringSuggestions` propõe apenas
+**ligações hipotéticas de estudo**, com aceite manual e revisão
+posterior da auditoria. Nenhuma recomendação automática estabelece
+o número real de strings do sistema.
