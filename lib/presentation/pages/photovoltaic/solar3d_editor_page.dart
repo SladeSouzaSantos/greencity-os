@@ -502,7 +502,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       previewMinutes, projectUtcOffset,
     );
     if (_previewShadeKey == key || (draggingId != null &&
-        _previewShadeKey != null)) return _previewShadeCache;
+        _previewShadeKey != null)) {
+      return _previewShadeCache;
+    }
     final scene = analysisScene;
     final result = <String, Solar3dPanelShadeInspection?>{};
     if (!sun.aboveHorizon) {
