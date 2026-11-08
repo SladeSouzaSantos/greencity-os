@@ -13,6 +13,7 @@ import '../../../domain/entities/solar_system.dart';
 import '../../../domain/solar3d/solar3d_geometric_shading.dart';
 import '../../../domain/solar3d/solar3d_plan_factory.dart';
 import '../../../domain/solar3d/solar3d_optical_correction.dart';
+import '../../../domain/solar3d/solar3d_electrical_audit.dart';
 import '../../../domain/solar3d/solar3d_scene_document.dart';
 import '../../../domain/solar3d/solar3d_sun_position.dart';
 import '../../widgets/photovoltaic/solar3d_scene_painter.dart';
@@ -59,6 +60,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   String progress = '';
   Map<int, List<PanelMonthlyIrradianceLoss>> monthly = {};
   int sceneRevision = 0;
+  Solar3dElectricalAudit? electricalAudit;
   String? lastCalculatedHourlyEndpoint;
   static const String hourlyUrl = String.fromEnvironment(
     'HSP_HOURLY_URL',
@@ -163,6 +165,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         selectedId = document!.scene.objects.firstWhere(
           (o) => o.kind == Solar3dObjectKind.panel).id;
         monthly = {};
+        electricalAudit = null;
         sceneRevision++;
         lastCalculatedHourlyEndpoint = null;
       });
@@ -238,6 +241,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         selectedId = base.objects.firstWhere(
           (o) => o.kind == Solar3dObjectKind.panel).id;
         monthly = {};
+        electricalAudit = null;
         lastCalculatedHourlyEndpoint = null;
         sceneRevision++;
       });
@@ -270,6 +274,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     setState(() {
       document = next;
       monthly = {};
+      electricalAudit = null;
       lastCalculatedHourlyEndpoint = null;
       sceneRevision++;
     });
@@ -612,6 +617,131 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   /// It changes only the monthly energy-estimate overlay in this session.
   /// The actual electrical topology, production and quote are not silently
   /// rewritten; no string mismatch/bypass yield is asserted.
+  void _auditElectrical() {
+    final doc = document;
+    if (doc == null) return;
+    final climate = widget.project.climate;
+    final temps = climate?.tempMinMonthly.where((v) =>
+        v.isFinite && v >= -60 && v <= 80).toList() ?? [];
+    try {
+      final report = Solar3dElectricalAudit.inspect(
+        systems: widget.systems,
+        scene: doc.scene,
+        minimumAmbientC: temps.isEmpty ? null :
+            temps.reduce(math.min),
+      );
+      setState(() => electricalAudit = report);
+    } on FormatException catch (error) {
+      _notice(error.message);
+    }
+  }
+
+  Widget _electricalAuditPanel() {
+    final report = electricalAudit;
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Auditoria preliminar de strings e MPPT',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 7),
+          const Text(
+            'DC: a corrente de uma string em série é limitada pela '
+            'placa mais fraca; em paralelo, as correntes se somam no '
+            'MPPT. Verificamos Voc, Vmp, Isc, Imp e limites do '
+            'datasheet. A temperatura mínima do projeto permite '
+            'somente uma estimativa preliminar de Voc a frio.'),
+          const Text(
+            'AC: o cálculo convencional já inclui eficiência nominal '
+            'do inversor. Ainda não calcula clipping horário, '
+            'curva de eficiência, mismatch elétrico nem bypass '
+            'sob sombreamento. Não duplicamos essas perdas.'),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: busy ? null : _auditElectrical,
+            icon: const Icon(Icons.fact_check_outlined),
+            label: const Text('VALIDAR STRINGS E LIMITES DO INVERSOR'),
+          ),
+          if (report != null) ...[
+            Text(
+              'Placas com string: ${report.assignedPanels}/'
+              '${report.totalPanels} · '
+              '${report.findings.where((f) =>
+                f.severity == Solar3dElectricalSeverity.blocking).length}'
+              ' bloqueio(s) · '
+              '${report.findings.where((f) =>
+                f.severity == Solar3dElectricalSeverity.warning).length}'
+              ' aviso(s).',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            if (!report.topologyComplete)
+              const Text('Preencha o ID de string de todas as placas '
+                  'para auditar a topologia completa.'),
+            for (final tracker in report.trackers)
+              ExpansionTile(
+                title: Text(
+                  'Inversor ${widget.systems.indexWhere((s) =>
+                      s.id == tracker.inverterId) + 1} · '
+                  'MPPT ${tracker.mpptIndex} · '
+                  '${tracker.strings.length} string(s)'),
+                subtitle: Text(
+                  'DC STC: ${tracker.totalPowerWp.toStringAsFixed(0)} Wp '
+                  '· Impp paralelo ${tracker.parallelImpStcA.toStringAsFixed(1)} A'
+                  ' · Isc paralelo ${tracker.parallelIscStcA.toStringAsFixed(1)} A'),
+                children: [
+                  for (final string in tracker.strings)
+                    ListTile(
+                      dense: true,
+                      title: Text(
+                        '${string.stringId} · '
+                        '${string.moduleCount} módulo(s) em série'),
+                      subtitle: Text(
+                        'Vmp STC ${string.vmpStcV.toStringAsFixed(1)} V · '
+                        'Voc STC ${string.vocStcV.toStringAsFixed(1)} V'
+                        ' · Imp STC ${string.impStcA.toStringAsFixed(1)} A'
+                        '${string.estimatedVocColdV == null ? "" :
+                          " · Voc frio estimado "
+                          "${string.estimatedVocColdV!.toStringAsFixed(1)} V"}'),
+                    ),
+                ],
+              ),
+            if (report.findings.isNotEmpty)
+              ExpansionTile(
+                initiallyExpanded: report.hasBlockers,
+                title: const Text('Inconsistências e limitações técnicas'),
+                children: [
+                  for (final finding in report.findings)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(
+                        finding.severity ==
+                                Solar3dElectricalSeverity.blocking
+                          ? Icons.error_outline
+                          : finding.severity ==
+                                Solar3dElectricalSeverity.warning
+                            ? Icons.warning_amber_outlined
+                            : Icons.info_outline,
+                        color: finding.severity ==
+                                Solar3dElectricalSeverity.blocking
+                            ? Colors.redAccent : null,
+                      ),
+                      title: Text(finding.message),
+                      subtitle: Text(
+                        '${finding.scope} · ${finding.code}'),
+                    ),
+                ],
+              ),
+          ],
+          const Text(
+            'Essa checagem é preliminar. Não há topologia celular '
+            'nem curvas I-V/bypass calibradas para declarar perdas '
+            'DC ou geração AC certificadas.'),
+        ],
+      ),
+    ));
+  }
+
   Future<void> _applyOpticalToProject() async {
     if (busy) return;
     if (lastCalculatedHourlyEndpoint == null ||
@@ -629,6 +759,14 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         yearUtc: year,
         excludedPanelIds: doc.excludedIds,
       );
+      // Electrical blockers do NOT change ray-cast POA.
+      // The user may still compare an optical scenario but must be warned
+      // that it is not a physically operable PV electrical design.
+      final temps = widget.project.climate?.tempMinMonthly.where((v) =>
+          v.isFinite && v >= -60 && v <= 80).toList() ?? [];
+      final audit = Solar3dElectricalAudit.inspect(
+        systems: widget.systems, scene: doc.scene,
+        minimumAmbientC: temps.isEmpty ? null : temps.reduce(math.min));
       final confirm = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -651,7 +789,15 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             'sob sombras parciais. Não representa geração AC '
             'validada e ainda não é salva como projeto homologado. '
             'Os obstáculos da API HSP convencional precisam estar '
-            'desativados para evitar dupla contagem.',
+            'desativados para evitar dupla contagem.\\n\\n'
+            'Auditoria elétrica preliminar: '
+            '${audit.topologyComplete ? "strings atribuídas" :
+                "strings incompletas"}; '
+            '${audit.findings.where((f) =>
+                  f.severity ==
+                    Solar3dElectricalSeverity.blocking).length} '
+            'bloqueio(s) de viabilidade. A aplicação permanece '
+            'SOMENTE óptica e não autoriza executar esse circuito.',
           ),
           actions: [
             TextButton(
@@ -1223,6 +1369,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             icon: const Icon(Icons.restart_alt_outlined),
             label: const Text('RESETAR ANÁLISE 3D')),
         ]),
+        const Divider(),
+        _electricalAuditPanel(),
         const Divider(),
         Text('HSP por placa · consulta horária opcional',
             style: Theme.of(context).textTheme.titleMedium),
