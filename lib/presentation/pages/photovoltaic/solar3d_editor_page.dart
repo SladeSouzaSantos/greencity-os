@@ -767,6 +767,36 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       final audit = Solar3dElectricalAudit.inspect(
         systems: widget.systems, scene: doc.scene,
         minimumAmbientC: temps.isEmpty ? null : temps.reduce(math.min));
+      if (audit.topologyComplete && audit.hasBlockers) {
+        // A fully specified but physically incompatible design must
+        // never be promoted to the project generation estimate.
+        // Its optical raycast remains available for diagnostics only.
+        setState(() => electricalAudit = audit);
+        final blocking = audit.findings.where((f) =>
+            f.severity == Solar3dElectricalSeverity.blocking).toList();
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Circuito elétrico incompatível'),
+            content: SingleChildScrollView(child: Text(
+              'Não é possível aplicar à geração projetada uma '
+              'topologia completa que viola limites do inversor.\n\n'
+              '${blocking.take(6).map((f) =>
+                "${f.scope}: ${f.message}").join("\\n")}\\n\\n'
+              'Corrija a quantidade de módulos em série/MPPT, '
+              'as correntes e as strings. A análise de HSP óptico '
+              'permanece disponível para estudo.',
+            )),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Revisar strings e MPPTs'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
       final confirm = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
