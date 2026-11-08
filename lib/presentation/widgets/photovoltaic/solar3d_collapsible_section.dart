@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
-/// Reduces information density in the Solar 3D mobile laboratory.
-/// ExpansionTile's state remains stable when the editor redraws for a
-/// camera or height change, and its children remain mounted while hidden.
-class Solar3dCollapsibleSection extends StatelessWidget {
+/// A compact independently collapsible group for the 3D laboratory.
+///
+/// Do NOT keep hidden Scrollables and DropdownButtonFormFields mounted
+/// during an expansion animation. The old ExpansionTile/maintainState
+/// combination could reparent a Scrollable while the MPPT field rebuilt,
+/// resulting in duplicate GlobalKeys and inherited-widget assertions.
+/// The group keeps only its expanded flag in State; scene/MPPT data live
+/// in the editor, not inside its transient controls.
+class Solar3dCollapsibleSection extends StatefulWidget {
   final String title;
   final bool initiallyExpanded;
   final List<Widget> children;
@@ -16,21 +21,49 @@ class Solar3dCollapsibleSection extends StatelessWidget {
   });
 
   @override
+  State<Solar3dCollapsibleSection> createState() =>
+      _Solar3dCollapsibleSectionState();
+}
+
+class _Solar3dCollapsibleSectionState
+    extends State<Solar3dCollapsibleSection> {
+  late bool expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    expanded = widget.initiallyExpanded;
+  }
+
+  @override
   Widget build(BuildContext context) => Card(
     margin: const EdgeInsets.symmetric(vertical: 4),
-    child: ExpansionTile(
-      key: PageStorageKey('solar3d-section-$title'),
-      initiallyExpanded: initiallyExpanded,
-      maintainState: true,
-      title: Text(title, style: Theme.of(context).textTheme.titleMedium),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: children,
+        Semantics(
+          button: true,
+          child: InkWell(
+            onTap: () => setState(() => expanded = !expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 14),
+              child: Row(children: [
+                Expanded(child: Text(widget.title,
+                    style: Theme.of(context).textTheme.titleMedium)),
+                Icon(expanded ? Icons.expand_less : Icons.expand_more),
+              ]),
+            ),
           ),
         ),
+        if (expanded)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: widget.children,
+            ),
+          ),
       ],
     ),
   );

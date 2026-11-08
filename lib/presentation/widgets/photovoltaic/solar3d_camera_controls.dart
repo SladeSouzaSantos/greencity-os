@@ -143,7 +143,7 @@ class Solar3dCameraControls extends StatelessWidget {
                   tooltip: 'Deslocar vista para esquerda',
                   padding: EdgeInsets.zero,
                   icon: const Icon(Icons.arrow_back),
-                  onPressed: () => onPanStep(const Offset(-32, 0)),
+                  onPressed: () => onPanStep(const Offset(32, 0)),
                 )),
                 SizedBox(width: 40, height: 37, child: IconButton(
                   tooltip: 'Centralizar deslocamento da vista',
@@ -155,7 +155,7 @@ class Solar3dCameraControls extends StatelessWidget {
                   tooltip: 'Deslocar vista para direita',
                   padding: EdgeInsets.zero,
                   icon: const Icon(Icons.arrow_forward),
-                  onPressed: () => onPanStep(const Offset(32, 0)),
+                  onPressed: () => onPanStep(const Offset(-32, 0)),
                 )),
               ]),
               SizedBox(width: 40, height: 37, child: IconButton(

@@ -62,8 +62,8 @@ void main() {
     expect(yaws, [-.18, .18]);
     expect(pans, [
       const Offset(0, 32),
-      const Offset(-32, 0),
       const Offset(32, 0),
+      const Offset(-32, 0),
       const Offset(0, -32),
     ]);
     expect(panReset, 1);

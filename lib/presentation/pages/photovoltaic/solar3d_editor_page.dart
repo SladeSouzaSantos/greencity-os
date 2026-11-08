@@ -1623,16 +1623,16 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               Text('Conexão no laboratório: ${_trackerLabel(current)}',
                   style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 7),
-              DropdownButtonFormField<int>(
-                key: ValueKey('${current.id}/${current.mpptIndex}'),
-                initialValue: current.mpptIndex! <=
-                        mpptSystem.inverter.mpptCount
+              Text('MPPT da placa — inversor '
+                  '${_systemIndexFor(current.id) + 1}'),
+              DropdownButton<int>(
+                key: ValueKey('solar3d-mppt-${current.id}'),
+                isExpanded: true,
+                value: current.mpptIndex != null &&
+                        current.mpptIndex! >= 1 &&
+                        current.mpptIndex! <= mpptSystem.inverter.mpptCount
                     ? current.mpptIndex : null,
-                decoration: InputDecoration(
-                  labelText: 'MPPT da placa — inversor ${_systemIndexFor(current.id) + 1}',
-                  helperText: 'Altera apenas a distribuição hipotética '
-                      'na análise 3D (não reconfigura o circuito físico).',
-                ),
+                hint: const Text('Selecionar MPPT'),
                 items: [
                   for (var idx = 1; idx <= mpptSystem.inverter.mpptCount; idx++)
                     DropdownMenuItem(
@@ -1641,10 +1641,14 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                           '${mpptSystem.inverter.modelName}'),
                     ),
                 ],
-                onChanged: (value) {
-                  if (value != null) _setPanelMppt(current, value);
+                onChanged: busy ? null : (value) {
+                  if (value != null && value != current.mpptIndex) {
+                    _setPanelMppt(current, value);
+                  }
                 },
               ),
+              const Text('Altera somente a distribuição hipotética na '
+                  'análise 3D; não reconfigura o circuito físico.'),
               if (mpptSystem.inverter.mpptCount == 1)
                 const Text('Este inversor possui somente 1 MPPT '
                     'no cadastro. Para usar mais MPPTs, selecione '
