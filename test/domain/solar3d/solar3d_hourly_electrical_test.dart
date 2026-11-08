@@ -103,7 +103,8 @@ void main() {
       hours: [a], inverters: {'INV2': inverter},
     ), throwsFormatException);
     expect(() => Solar3dElectricalWindowSimulator.calculate(
-      hours: [a] * 25, inverters: {'INV1': inverter},
+      hours: List.generate(25, (_) => a),
+      inverters: {'INV1': inverter},
     ), throwsFormatException);
   });
 }
