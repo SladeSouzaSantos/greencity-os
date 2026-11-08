@@ -151,8 +151,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
 
   Future<void> _loadSaved() async {
     try {
+      final initialRevision = sceneRevision;
       final saved = await storage!.load();
-      if (!mounted || saved == null || document == null) return;
+      if (!mounted || saved == null || document == null ||
+          sceneRevision != initialRevision) {
+        return;
+      }
       setState(() {
         document = saved.reconciledWith(document!.scene);
         cameraFrameScene = document!.scene;
@@ -164,8 +168,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       });
     } catch (err) {
       if (mounted) {
-      _notice('Não foi possível abrir a cena salva: $err');
-    }
+        _notice('Não foi possível abrir a cena salva: $err');
+      }
     }
   }
 
@@ -632,10 +636,15 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           content: Text(
             'Serão considerados ${correction.panelCount} módulos e '
             'os 12 meses de ${correction.weatherYearUtc}. '
-            'O GreenCity OS aplicará uma única correção óptica, '
-            'ponderada por módulo em cada MPPT, sobre o HSP já usado '
-            'no dimensionamento. A tela da geração e seus totais '
-            'mensais serão recalculados.\n\n'
+            'O GreenCity OS recalculará cada inversor '
+            'independentemente. As placas serão agrupadas pelos MPPTs '
+            'escolhidos no 3D (inclusive se forem diferentes dos '
+            'grupos originais), respeitando o número real de MPPTs '
+            'do inversor. O cenário aplica uma correção óptica única '
+            'por MPPT sobre a base HSP dos módulos.\n\n'
+            'As conexões físicas originais NÃO serão alteradas. '
+            'A geração estimada pode mudar pela nova distribuição '
+            'hipotética dos MPPTs além da sombra.\n\n'
             'ATENÇÃO: É uma estimativa experimental de irradiância; '
             'não modela eletricamente strings, bypass nem mismatch '
             'sob sombras parciais. Não representa geração AC '
