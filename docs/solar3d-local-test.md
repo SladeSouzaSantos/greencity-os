@@ -98,13 +98,15 @@ No aplicativo, abra um projeto, adicione inversor e módulos, e selecione
 4. Informe ID de string e MPPT **no estudo** e salve.
    Feche/reabra a tela: posições/obstáculos devem ser restaurados.
    O dimensionamento elétrico e o orçamento **não** são modificados.
-5. Confirme API HSP local ativa, selecione janeiro de 2023 e clique
-   **Calcular perdas ópticas por placa**. O resultado é HSP em
-   kWh/m²/dia e perda percentual de **irradiância**, não perda de
-   energia elétrica do MPPT.
-6. **Calcular 12 meses** chama a API mês a mês e pode demorar.
-   Comece por um mês e 2–6 placas; o limite síncrono impede cenas
-   grandes e orientações demais.
+5. Confirme a API HSP local/pública disponível e abra a seção
+   **Calcular perdas ópticas · 12 meses**. Clique em
+   **Calcular perdas ópticas por placa**. O aplicativo consulta
+   janeiro a dezembro, em sequência, sem seleção de um mês isolado.
+6. Confira a identificação do **ano UTC completo retornado pelo HSP**.
+   O modo automático utiliza o mais recente disponibilizado pelo
+   serviço (atualmente 2024 com os padrões NASA POWER), não o ano
+   corrente incompleto. O resultado é HSP e perda de **irradiância**,
+   não energia elétrica certificada do MPPT.
 
 **Android:** a interface Flutter funciona nativamente; o endereço
 `127.0.0.1` no emulador aponta para o próprio Android, não para o
@@ -295,8 +297,10 @@ Abra `http://127.0.0.1:8000/docs` para confirmar a presença
 de `/recurso-solar/horario`. Não basta abrir o endereço da
 rota GET no navegador: **o endpoint é POST**. Na tela Flutter,
 o campo **Endpoint horário HSP** é editável sem recompilar;
-clique em **Usar API local Windows · porta 8000**, selecione
-mês 1 de 2023 e execute a consulta. Requer acesso à NASA POWER.
+clique em **Usar HSP local Windows**, deixe o ano no modo
+**Mais recente completo (automático)** e execute os 12 meses.
+Requer acesso à NASA POWER. A fonte escolhe seu último ano
+completo disponível, nunca inventa meses faltantes.
 
 ### Parar/remover somente o Solar 3D Lab antigo
 
@@ -329,10 +333,11 @@ seja uma perda elétrica I-V de string ou de MPPT.
    nenhuma placa cruza o terreno e se os **MPPTs, inclinação e azimute
    cadastrados** correspondem à cena. Valores editados apenas no 3D e
    diferentes do dimensionamento são rejeitados na aplicação.
-3. Use a API HSP horária local `feature/hourly-resource-api`,
-   selecione o ano e marque **Calcular 12 meses**. Execute o cálculo
-   completo até aparecerem os resultados mensais. Não há aplicação
-   a partir de um único mês nem de apenas algumas placas.
+3. Use a API HSP horária da branch `dev` ou a API pública
+   homologada e execute **Calcular perdas ópticas · 12 meses**.
+   Os 12 meses são obrigatórios e processados sequencialmente.
+   Não é necessário selecionar mês nem ativar uma opção.
+   O servidor confirma o ano meteorológico completo utilizado.
 4. Clique em **APLICAR CORREÇÃO ÓPTICA NA GERAÇÃO** e confirme a
    explicação de limitações. A página 3D retorna à tela do projeto.
 5. O cartão **Geração projetada · correção óptica 3D** mostra
@@ -545,20 +550,18 @@ interromper rotação/arrasto do objeto. A área 3D agora usa
 canvas, e **a página só rola fora dele**.
 
 - **1 dedo no objeto:** seleciona e arrasta o objeto em X/Z, preservando Y.
-- **1 dedo sobre o fundo:** gira a câmera em azimute/elevação.
-- **2 dedos movidos em paralelo:** deslocam a vista (pan da câmera)
-  sem alterar posições ou conexões dos equipamentos.
-- **2 dedos em pinça:** zoom; giro relativo dos dedos: rotação.
-- Após gesto com 2 dedos, o dedo remanescente não inicia
-  acidentalmente novo arrasto/rotação até soltar todos os dedos.
-- Roda de mouse permanece como zoom no Windows.
-- `Solar3dProjection` recebe `cameraPan` apenas visual, usado tanto na
-  projeção como na inversão do arrasto. Botões de vista superior,
-  perspectiva e reenquadramento restauram o pan.
+- **1 dedo sobre o fundo:** não altera a orientação da câmera.
+- **2 dedos:** cancela o arrasto em andamento; a câmera usa
+  controles dedicados, para evitar conflitos com objetos.
+- **Bússola N/S/L/O:** orientação horizontal; setas de giro
+  e inclinação ajustam os dois eixos de rotação 3D.
+- **Direcional de quatro setas:** move a vista sem deslocar objetos.
+  Os comandos verticais foram invertidos após testes no celular.
+- **Vista superior:** ícone junto ao N da bússola.
+- **Zoom:** +/− no visor ou roda do mouse no Windows.
 
-Testes automatizados cobrem arrasto vertical dentro do 3D sem
-deslocar o `ListView`, pinça/pan/twist, transição multitoque→1 dedo
-sem saltos, e projeção com deslocamento da câmera.
+Testes automatizados cobrem o bloqueio do scroll do `ListView`,
+movimento/cancelamento de objetos e controles independentes da câmera.
 
 ### API horária pública
 
@@ -662,3 +665,52 @@ um objeto temporário à cena. Ao selecionar um obstáculo salvo, o botão
   enviados a `Solar3dSunPosition.calculate` e
   `SolarResourceHourlyDataSource.getHourlyResource`, não a posição
   automática do aparelho.
+
+## Consolidação do editor móvel — revisão 08/11/2026
+
+### Erro de altura da placa e ciclo de vida
+
+O editor antigo criava três `TextEditingController` no método
+`_editPosition` e os descartava imediatamente após o retorno
+de `showDialog`, mesmo com a rota ainda em animação de fechamento.
+Esse padrão pode provocar falhas de dependências no Flutter como
+`_dependents.isEmpty`. A edição X/Z/altura da **borda inferior**
+agora utiliza `Solar3dPositionDialog`, com `TextFormField`
+próprios e sem descarte prematuro. A edição de string de estudo
+também não descarta controlador antecipadamente.
+Teste: editar borda inferior para **5,5 m**, confirmar, voltar
+e editar novamente sem exceção ou alteração de MPPT.
+
+### Faces volumétricas e perspectiva
+
+A pintura anterior ordenava objetos inteiros pelo maior valor de
+profundidade, mas um obstáculo possui frente/topo/laterais que podem
+ficar em posições diferentes em relação à placa em ângulo inclinado.
+Agora o editor transforma e projeta as **seis faces de cada volume**
+individualmente, ordena as faces pelo valor médio de profundidade
+e pinta de trás para a frente. O seletor calcula a profundidade no
+ponto tocado usando interpolação baricêntrica, coerente com a câmera
+ortográfica. O cálculo físico por raio **não foi alterado**.
+
+Regressões: obstáculo de 5 m, placa acima com borda a 5,5 m,
+placa abaixo do topo do obstáculo, vista superior e vistas
+oblíquas. A prévia não implementa z-buffer rasterizado; geometrias
+intersectadas/com faces que cruzam podem ainda precisar de um
+renderizador 3D com profundidade por pixel.
+
+### Menos poluição visual e ano meteorológico
+
+O visor mantém botões +/−, bússola e setas de movimentação, mas
+remove os três atalhos redundantes abaixo da imagem. O ícone
+da vista superior fica junto do N. As seções **Trajetória solar**,
+**Objetos/MPPTs**, **Auditoria elétrica**, **Calcular perdas ópticas**
+e **Aplicar correção** podem ser recolhidas/expandidas.
+
+A consulta óptica é **sempre anual**, mês a mês de janeiro a
+dezembro. A seleção padrão do período é **Mais recente completo
+(automático)**: a API HSP decide o último ano UTC coberto
+integralmente. O aplicativo valida que todas as requisições mensais
+usaram o **mesmo ano** e mostra aquele retornado pelo servidor.
+Com a configuração padrão da fonte NASA POWER, o ano completo mais
+recente é **2024**; assim que a fonte for ampliada, pode avançar
+automaticamente. Não usa um 2026 incompleto.
