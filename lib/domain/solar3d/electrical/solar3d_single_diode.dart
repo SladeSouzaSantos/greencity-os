@@ -18,6 +18,52 @@ class Solar3dDiodeCalibration {
     this.independentlyVerified = false,
   });
 
+  Map<String, Object?> toJson() => {
+    'schema_version': 1,
+    'module_model': moduleModel,
+    'source': source,
+    'series_cells': seriesCells,
+    'il_ref_a': ilRefA,
+    'io_ref_a': ioRefA,
+    'rs_ohm': rsOhm,
+    'rsh_ref_ohm': rshRefOhm,
+    'a_ref_v': aRefV,
+    'alpha_sc_a_per_c': alphaScAperC,
+    'band_gap_ev': bandGapEv,
+    // Never serialize the claim of independent verification; that requires
+    // external benchmark evidence and approval outside this editor.
+  };
+
+  static Solar3dDiodeCalibration fromJson(Map<String, dynamic> json) {
+    double requiredNumber(String name) {
+      final v = json[name];
+      if (v is! num || !v.isFinite) {
+        throw FormatException('Parâmetro I-V ausente: $name');
+      }
+      return v.toDouble();
+    }
+    if (json['schema_version'] != 1 ||
+        json['module_model'] is! String ||
+        json['source'] is! String ||
+        json['series_cells'] is! int) {
+      throw const FormatException('Registro I-V incompatível');
+    }
+    final model = Solar3dDiodeCalibration(
+      moduleModel: json['module_model'] as String,
+      source: json['source'] as String,
+      seriesCells: json['series_cells'] as int,
+      ilRefA: requiredNumber('il_ref_a'),
+      ioRefA: requiredNumber('io_ref_a'),
+      rsOhm: requiredNumber('rs_ohm'),
+      rshRefOhm: requiredNumber('rsh_ref_ohm'),
+      aRefV: requiredNumber('a_ref_v'),
+      alphaScAperC: requiredNumber('alpha_sc_a_per_c'),
+      bandGapEv: requiredNumber('band_gap_ev'),
+    );
+    model.validate();
+    return model;
+  }
+
   void validate() {
     if (moduleModel.trim().isEmpty || source.trim().isEmpty ||
         seriesCells < 1 || seriesCells > 300 ||
