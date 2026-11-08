@@ -28,7 +28,7 @@ class Solar3dCollapsibleSection extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: this.children,
+            children: children,
           ),
         ),
       ],
