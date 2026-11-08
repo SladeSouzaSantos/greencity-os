@@ -16,36 +16,87 @@ da sua conta antes de habilitar cada API.
 É apenas o valor inicial editável do formulário; cenários existentes
 não são alterados.
 
-## Análise Solar 3D — entrega óptica experimental
+## Análise Solar 3D — MVP óptico (Android e Windows)
 
-O editor `Solar3dEditorPage` da [PR #14](https://github.com/SladeSouzaSantos/greencity-os/pull/14)
-é uma prévia 3D nativa Flutter (Windows e Android), com obstáculos,
-trajetória do sol, sombreamento direto por placa, atribuições de MPPT
-**hipotéticas** e auditoria preliminar de strings. É possível calcular
-12 meses de HSP horário e aplicar/remover uma correção **somente óptica**
-na geração estimada da sessão. O orçamento e as ligações elétricas
-originais não são reconfigurados automaticamente.
+O editor **Solar 3D** é integrado ao **Novo Dimensionamento**.
+Permite montar e analisar uma cena 3D com placas e obstáculos sem
+alterar automaticamente as ligações elétricas ou o orçamento original.
 
-A altura da **borda inferior** é usada para placas, e a altura da
-**base** para obstáculos (`0 m` = solo); a geometria/raycast utiliza
-internamente a altura do centro. `Imp` acima do limite operacional é
-aviso de possível clipping; `Isc` acima do limite de curto-circuito
-é bloqueio. Não se trata de cálculo DC/AC validado.
+**Funcionalidades:**
 
-O endpoint `POST /api/recurso-solar/horario` foi verificado no
-HSP **DEV**, mas não se deve presumir disponibilidade em produção.
-O usuário escolhe a URL na tela 3D, ou inicia o HSP local.
+- **Câmera 3D:** orientação N/S/L/O, rotação horizontal e vertical,
+  vista superior, zoom +/− e setas de deslocamento da vista.
+- **Edição individual:** arrastar objetos, digitar X (Leste/Oeste),
+  Z (Norte/Sul) e altura, editar obstáculos e inclinação das placas.
+  A altura da placa é a **borda inferior ao solo**; a do obstáculo
+  é a **base** (`0 m` = apoiado no terreno).
+- **Seleção múltipla:** ativar **Selecionar vários**, marcar placas e
+  obstáculos, usar **Todos / Limpar**, arrastar o conjunto em X/Z ou
+  abrir **Mover / altura** para deslocamentos relativos e para
+  alinhar a base/borda inferior em uma altura absoluta comum.
+  As distâncias relativas, os inversores e os MPPTs são preservados.
+  A seleção é temporária, sem grupos permanentes no JSON.
+- **Sombreamento por placa:** posição solar baseada na latitude/longitude
+  do projeto e estimativa geométrica das sombras diretas. A prévia
+  Flutter usa faces volumétricas; não é um z-buffer 3D completo.
+- **MPPTs independentes:** redistribuição hipotética de placas apenas
+  no estudo 3D; não altera o circuito cadastrado. A auditoria
+  preliminar sinaliza `Imp` operacional elevado e bloqueia
+  `Isc` absoluto fora dos limites.
+- **Correção óptica anual:** consulta HSP horário de **janeiro a
+  dezembro**, usando por padrão o ano civil UTC completo mais
+  recente da fonte. A correção é aplicada à geração estimada
+  somente por confirmação do usuário.
+- **Persistência:** posições e MPPTs de estudo são salvos
+  automaticamente. Os fatores ópticos por inversor/MPPT são
+  persistidos quando o usuário confirma **Aplicar correção
+  óptica na geração**. Reabrir o editor sem editar mantém a
+  correção; modificar a cena ou o dimensionamento invalida
+  os fatores antigos. Remover correção não apaga obstáculos.
 
-**Homologação:** CI Flutter + Windows + Android aprovado no SHA
-`87138b97`; smoke Windows reportado pelo usuário; Android físico
-ainda não validado. O merge permanece condicionado à revisão do escopo,
-à decisão sobre o endpoint HSP e ao gate Android.
+**Limite físico:** os fatores representam perda de **irradiância**,
+não uma simulação certificada de curvas I–V, bypass, mismatch,
+cabos ou perdas DC/AC. A [fase elétrica #16](https://github.com/SladeSouzaSantos/greencity-os/issues/16)
+segue separada.
 
-Documentos: [release-readiness](docs/solar3d-release-readiness.md),
-[integração](docs/solar3d-app-integration.md),
+### API HSP horária
+
+O serviço é consultado em `POST /api/recurso-solar/horario`.
+O endpoint público configurado no código é
+`https://hsp.greencity.net.br/api/recurso-solar/horario`;
+pode ser ajustado no editor ou via `HSP_HOURLY_URL` no build.
+A API foi comprovada em DEV; sua disponibilidade em cada ambiente
+de destino deve ser confirmada. A edição 3D funciona offline,
+mas o cálculo anual depende de dados horários válidos.
+
+### Testes e APK Android
+
+~~~powershell
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug
+~~~
+
+O arquivo local é `build/app/outputs/flutter-apk/app-debug.apk`.
+O workflow [Flutter Analyze and Tests](https://github.com/SladeSouzaSantos/greencity-os/actions)
+publica o arquivo no artefato `greencity-os-android-debug-apk`
+da execução do CI. Baixe o ZIP na seção **Artifacts**.
+
+Este APK é uma **build debug para homologação**, não uma versão
+release assinada para Play Store. A pipeline usa `.env.example`
+sem chaves reais; nunca distribua APK/AAB contendo credenciais
+embarcadas em assets Flutter.
+
+**Qualidade:** a [PR #14](https://github.com/SladeSouzaSantos/greencity-os/pull/14)
+passou no [CI #42514096789](https://github.com/SladeSouzaSantos/greencity-os/actions/runs/42514096789)
+(testes Flutter, build Windows e APK Android). O usuário confirmou
+o funcionamento no Android, inclusive a seleção múltipla.
+
+Documentação: [status de release](docs/solar3d-release-readiness.md),
+[integração técnica](docs/solar3d-app-integration.md),
 [runbook](docs/solar3d-local-test.md) e
 [homologação elétrica](docs/solar3d-electrical-homologation.md).
-A modelagem I–V/bypass/DC/AC fica em [fase separada #16](https://github.com/SladeSouzaSantos/greencity-os/issues/16).
 
 ## Estrutura de Pasta do Projeto
 
