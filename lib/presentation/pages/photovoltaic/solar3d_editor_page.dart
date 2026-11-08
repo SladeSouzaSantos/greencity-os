@@ -62,13 +62,15 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   String? initError;
   String? selectedId;
   double yaw = 0, pitch = 0.80, zoom = 1;
-  // The HSP NASA POWER provider supplies COMPLETE years 2022-2024 by
-  // default. The year 2026 is incomplete; use the most recent
-  // verified complete year rather than guessing 2025/2026 availability.
-  int year = 2024;
+  // 0 = ask HSP for its latest COMPLETE UTC calendar year.
+  // On the current NASA POWER production defaults, this is 2024;
+  // the choice advances automatically when the server adds 2025.
+  int yearSelection = 0;
+  int? calculatedYearUtc;
   bool busy = false;
   String progress = '';
   Map<int, List<PanelMonthlyIrradianceLoss>> monthly = {};
+        calculatedYearUtc = null;
   int sceneRevision = 0;
   // Cache expensive per-panel ray intersections across camera-only
   // interactions (orbit, pinch, zoom, pan). Invalidate on scene/solar
@@ -180,6 +182,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         selectedId = document!.scene.objects.firstWhere(
           (o) => o.kind == Solar3dObjectKind.panel).id;
         monthly = {};
+        calculatedYearUtc = null;
         electricalAudit = null;
         sceneRevision++;
         lastCalculatedHourlyEndpoint = null;
@@ -256,6 +259,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         selectedId = base.objects.firstWhere(
           (o) => o.kind == Solar3dObjectKind.panel).id;
         monthly = {};
+        calculatedYearUtc = null;
         electricalAudit = null;
         lastCalculatedHourlyEndpoint = null;
         sceneRevision++;
@@ -289,6 +293,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     setState(() {
       document = next;
       monthly = {};
+        calculatedYearUtc = null;
       electricalAudit = null;
       lastCalculatedHourlyEndpoint = null;
       sceneRevision++;
@@ -637,11 +642,13 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
       busy = true;
       progress = 'Preparando séries';
       monthly = {};
+        calculatedYearUtc = null;
       lastCalculatedHourlyEndpoint = null;
     });
     final client = SolarResourceHourlyDataSource(
         dio: Dio(), endpoint: endpoint);
     final output = <int, List<PanelMonthlyIrradianceLoss>>{};
+    int? sourceYearUtc;
     try {
       for (var m = 1; m <= 12; m++) {
         if (!mounted) return;
@@ -658,10 +665,18 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             longitude: widget.project.longitude,
             inclination: sample.tiltDegrees,
             azimuth: sample.azimuthDegrees,
-            yearUtc: year,
+            yearUtc: yearSelection == 0 ? null : yearSelection,
             monthUtc: m,
             source: 'NASA POWER',
           );
+          // Every month and every orientation must use the SAME
+          // meteorological year; otherwise annual losses cannot
+          // legitimately be applied to the generation estimate.
+          if (sourceYearUtc != null && sourceYearUtc != resource.yearUtc) {
+            throw StateError('A fonte mudou de ano durante o cálculo. '
+                'Reinicie a análise de 12 meses.');
+          }
+          sourceYearUtc = resource.yearUtc;
           values.addAll(Solar3dGeometricShading.calculate(
             scene: scene, resource: resource,
             targetPanelIds: group.map((p) => p.id).toSet(),
@@ -678,6 +693,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         }
         setState(() {
           monthly = output;
+          calculatedYearUtc = sourceYearUtc;
           lastCalculatedHourlyEndpoint = endpoint;
         });
       }
@@ -950,7 +966,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         systems: widget.systems,
         scene: doc.scene,
         monthly: monthly,
-        yearUtc: year,
+        yearUtc: calculatedYearUtc!,
         excludedPanelIds: doc.excludedIds,
       );
       // Electrical blockers do NOT change ray-cast POA.
@@ -1691,6 +1707,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           keyboardType: TextInputType.url,
           onChanged: (_) => setState(() {
             monthly = {};
+        calculatedYearUtc = null;
             lastCalculatedHourlyEndpoint = null;
           }),
         ),
@@ -1700,6 +1717,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               hourlyEndpointController.text =
                   SolarResourceHourlyDataSource.publicEndpoint;
               monthly = {};
+        calculatedYearUtc = null;
               lastCalculatedHourlyEndpoint = null;
             }),
             icon: const Icon(Icons.public),
@@ -1709,6 +1727,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             onPressed: () => setState(() {
               hourlyEndpointController.text = localHourlyUrl;
               monthly = {};
+        calculatedYearUtc = null;
               lastCalculatedHourlyEndpoint = null;
             }),
             icon: const Icon(Icons.computer_outlined),
@@ -1717,26 +1736,38 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         ]),
         Wrap(spacing: 14, crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            const Text('Ano de referência (12 meses completos):'),
-            DropdownButton<int>(value: year, items: [
-              for (final y in [2022, 2023, 2024])
-                DropdownMenuItem(value: y, child: Text('Ano $y')),
-            ], onChanged: busy ? null : (value) {
-              if (value != null) {
-                setState(() {
-                  year = value;
-                  monthly = {};
-                  lastCalculatedHourlyEndpoint = null;
-                });
-              }
-            }),
+            const Text('Ano meteorológico:'),
+            DropdownButton<int>(
+              value: yearSelection,
+              items: [
+                const DropdownMenuItem(
+                  value: 0,
+                  child: Text('Mais recente completo (automático)'),
+                ),
+                for (final y in [2022, 2023, 2024])
+                  DropdownMenuItem(value: y, child: Text('Ano $y')),
+              ],
+              onChanged: busy ? null : (value) {
+                if (value != null) {
+                  setState(() {
+                    yearSelection = value;
+                    monthly = {};
+                    calculatedYearUtc = null;
+                    lastCalculatedHourlyEndpoint = null;
+                  });
+                }
+              },
+            ),
           ],
         ),
-        const Text('O HSP usa 2024 por padrão (último ano completo '
-            'oferecido pela configuração NASA POWER em produção). '
-            'Sempre são calculados janeiro a dezembro, mês a mês; '
-            '2026 não está completo e 2025 exige atualização dos '
-            'dados disponíveis no servidor.'),
+        const Text('O servidor HSP escolhe automaticamente o último '
+            'ano civil UTC completo. Na configuração NASA POWER atual '
+            'é 2024; quando forem publicados dados completos de 2025, '
+            'o aplicativo poderá utilizá-los sem alteração. '
+            'Janeiro a dezembro são sempre calculados em sequência.'),
+        if (calculatedYearUtc != null)
+          Text('Ano confirmado na resposta HSP: $calculatedYearUtc',
+              style: const TextStyle(fontWeight: FontWeight.bold)),
         FilledButton.icon(onPressed:busy?null:_calculate,
           icon: const Icon(Icons.calculate_outlined),
           label:Text(busy ? progress : 'Calcular perdas ópticas por placa')),
