@@ -772,9 +772,10 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
           const Text(
             'DC: a corrente de uma string em série é limitada pela '
             'placa mais fraca; em paralelo, as correntes se somam no '
-            'MPPT. Verificamos Voc, Vmp, Isc, Imp e limites do '
-            'datasheet. A temperatura mínima do projeto permite '
-            'somente uma estimativa preliminar de Voc a frio.'),
+            'MPPT. Imp acima do máximo operacional pode indicar '
+            'limitação de corrente (aviso); Isc acima do limite '
+            'de curto-circuito impede a aplicação (bloqueio). '
+            'A análise é STC e requer confirmação do fabricante.'),
           const Text(
             'AC: o cálculo convencional já inclui eficiência nominal '
             'do inversor. Ainda não calcula clipping horário, '
@@ -825,8 +826,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
                   '${tracker.strings.length} string(s)'),
                 subtitle: Text(
                   'DC STC: ${tracker.totalPowerWp.toStringAsFixed(0)} Wp '
-                  '· Impp paralelo ${tracker.parallelImpStcA.toStringAsFixed(1)} A'
-                  ' · Isc paralelo ${tracker.parallelIscStcA.toStringAsFixed(1)} A'),
+                  '· Imp STC ${tracker.parallelImpStcA.toStringAsFixed(1)} A '
+                  '/ máx. operacional '
+                  '${tracker.operatingCurrentLimitA.toStringAsFixed(1)} A'
+                  ' · Isc STC ${tracker.parallelIscStcA.toStringAsFixed(1)} A '
+                  '/ máx. curto-circuito '
+                  '${tracker.shortCircuitCurrentLimitA.toStringAsFixed(1)} A'),
                 children: [
                   for (final string in tracker.strings)
                     ListTile(
@@ -920,7 +925,7 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
               'Não é possível aplicar à geração projetada uma '
               'topologia completa que viola limites do inversor.\n\n'
               '${blocking.take(6).map((f) =>
-                "${f.scope}: ${f.message}").join("\\n")}\n\n'
+                "${f.scope}: ${f.message}").join("\n")}\n\n'
               'Corrija a quantidade de módulos em série/MPPT, '
               'as correntes e as strings. A análise de HSP óptico '
               'permanece disponível para estudo.',
@@ -948,6 +953,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
             'grupos originais), respeitando o número real de MPPTs '
             'do inversor. O cenário aplica uma correção óptica única '
             'por MPPT sobre a base HSP dos módulos.\n\n'
+            '${audit.findings.any((f) =>
+                  f.code == "MPPT_CURRENT_LIMIT")
+                ? "AVISO: Imp excede o máximo operacional em um ou mais "
+                  "MPPTs. O clipping de corrente não foi estimado. "
+                  "Confirme a compatibilidade com o fabricante.\\n\\n"
+                : ""}'
             'As conexões físicas originais NÃO serão alteradas. '
             'A geração estimada pode mudar pela nova distribuição '
             'hipotética dos MPPTs além da sombra. '

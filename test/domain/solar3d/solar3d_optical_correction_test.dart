@@ -15,12 +15,17 @@ import 'package:greencity_os/domain/solar3d/solar3d_electrical_audit.dart';
 import 'package:greencity_os/domain/solar3d/solar3d_plan_factory.dart';
 
 void main() {
-  List<SolarSystem> systems() {
+  List<SolarSystem> systems({
+    double moduleImpA = 12,
+    double moduleIscA = 13,
+    double operatingLimitA = 20,
+    double shortCircuitLimitA = 30,
+  }) {
     final module = PvModule(
       manufacturer: 'TEST', modelName: '500 W',
       cellTechnology: CellTechnology.topcon, powerWp: 500,
       efficiency: 20, length: 2000, width: 1000, weight: 25,
-      vOc: 49, iSc: 13, vMp: 41, iMp: 12,
+      vOc: 49, iSc: moduleIscA, vMp: 41, iMp: moduleImpA,
       tempCoefVoc: -.3, tempCoefIsc: .04,
       tempCoefPmax: -.3, isBifacial: false,
     );
@@ -31,7 +36,8 @@ void main() {
       euroEfficiency: .97, mpptCount: 2,
       maxInputVoltage: 600, nominalVoltageDc: 380,
       startVoltage: 40, minMpptVoltage: 50, maxMpptVoltage: 550,
-      maxInputCurrentPerMppt: 20, maxShortCircuitCurrent: 30,
+      maxInputCurrentPerMppt: operatingLimitA,
+      maxShortCircuitCurrent: shortCircuitLimitA,
       gridConnection: GridConnection.monophasic, maxOutputCurrent: 30,
       nominalVoltageAc: 220, dimensions: '', weight: 12,
       minOperatingTemp: -20, maxOperatingTemp: 60,
@@ -280,7 +286,7 @@ void main() {
     final base = Solar3dPlanFactory.fromSystems(list);
     final scene = Solar3dScene(base.objects.map((panel) {
       // MPPT 1 has two 1-module parallel strings: 41 V < 50 V,
-      // and 24 A > the MPPT 20 A limit. MPPT 2 is a valid pair in series.
+      // and 24 A > the 20 A usable MPPT limit (warning); MPPT 2 is valid.
       final string = panel.id == 'SYS/1/1' ? 'S1' :
           panel.id == 'SYS/1/2' ? 'S2' : 'S3';
       return panel.copyWith(stringId: string);
@@ -293,12 +299,61 @@ void main() {
     expect(report.findings.any((f) =>
       f.code == 'MPPT_UNDERVOLTAGE'), true);
     expect(report.findings.any((f) =>
-      f.code == 'MPPT_CURRENT'), true);
+      f.code == 'MPPT_CURRENT_LIMIT' &&
+      f.severity == Solar3dElectricalSeverity.warning), true);
     expect(report.findings.any((f) =>
       f.code == 'COLD_VOC_UNAVAILABLE'), false);
     final first = report.trackers.firstWhere((t) => t.mpptIndex == 1);
     expect(first.parallelImpStcA, 24);
     expect(first.parallelIscStcA, 26);
+  });
+
+  test('Solplanet 16 A operacional / 22,5 A Isc: alerta sem bloqueio', () {
+    final list = systems(
+      moduleImpA: 17.57, moduleIscA: 18.6,
+      operatingLimitA: 16, shortCircuitLimitA: 22.5,
+    );
+    final base = Solar3dPlanFactory.fromSystems(list);
+    final scene = Solar3dScene(base.objects.map((p) =>
+        p.copyWith(stringId: p.mpptIndex == 1 ? 'S1' : 'S2'))
+      .toList());
+    final report = Solar3dElectricalAudit.inspect(
+      systems: list, scene: scene, minimumAmbientC: -5);
+    expect(report.topologyComplete, true);
+    expect(report.hasBlockers, false);
+    expect(report.hasWarnings, true);
+    expect(report.findings.where((f) =>
+        f.code == 'MPPT_CURRENT_LIMIT' &&
+        f.severity == Solar3dElectricalSeverity.warning).length, 2);
+    expect(report.findings.any((f) =>
+        f.code == 'MPPT_SHORT_CIRCUIT'), false);
+    for (final mppt in report.trackers) {
+      expect(mppt.parallelImpStcA, closeTo(17.57, 1e-8));
+      expect(mppt.parallelIscStcA, closeTo(18.6, 1e-8));
+      expect(mppt.operatingCurrentLimitA, 16);
+      expect(mppt.shortCircuitCurrentLimitA, 22.5);
+    }
+    expect(report.electricallyCalibrated, false);
+  });
+
+  test('Isc acima de 22,5 A continua bloqueando com Imp dentro de 16 A', () {
+    final list = systems(
+      moduleImpA: 15, moduleIscA: 23,
+      operatingLimitA: 16, shortCircuitLimitA: 22.5,
+    );
+    final base = Solar3dPlanFactory.fromSystems(list);
+    final scene = Solar3dScene(base.objects.map((p) =>
+        p.copyWith(stringId: p.mpptIndex == 1 ? 'S1' : 'S2'))
+      .toList());
+    final report = Solar3dElectricalAudit.inspect(
+      systems: list, scene: scene, minimumAmbientC: -5);
+    expect(report.topologyComplete, true);
+    expect(report.hasBlockers, true);
+    expect(report.findings.where((f) =>
+        f.code == 'MPPT_SHORT_CIRCUIT' &&
+        f.severity == Solar3dElectricalSeverity.blocking).length, 2);
+    expect(report.findings.any((f) =>
+        f.code == 'MPPT_CURRENT_LIMIT'), false);
   });
 
   test('Auditoria elétrica não confunde string S1 de outro inversor', () {

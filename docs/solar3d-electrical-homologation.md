@@ -77,14 +77,15 @@ ou usada como previsão AC de projeto executável.
 - [x] Quatro placas originalmente num array podem ser alocadas 3+1
   no cenário 3D, sem modificar `SolarArray.mpptIndex`.
 - [x] Auditoria recusa inferir string elétrica sem atribuição explícita.
-- [x] Auditoria detecta Vmp STC inferior ao mínimo MPPT,
-  corrente paralela excessiva, string atravessando dois MPPTs.
+- [x] Auditoria detecta Vmp STC abaixo do mínimo MPPT,
+  Isc acima do limite absoluto (bloqueio), Imp acima do máximo
+  operacional (aviso de clipping) e string atravessando MPPTs.
 - [x] Múltiplos inversores podem ter a mesma ID de string sem
   interconexão acidental.
 - [x] Flutter Analyze + testes rodados em Linux no CI.
-- [x] Compilação e testes Windows de CI: aprovada no SHA `0a175922`.
-- [ ] Compilação APK Android de CI: aguardando validação do manifesto
-  compatível com AGP no `isar_flutter_libs 3.1.0+1`.
+- [x] Compilação e testes Windows no CI: aprovadas no SHA `f688dcc5`.
+- [x] Compilação APK Android no CI: aprovada no SHA `f688dcc5`,
+  com manifesto Isar compatibilizado.
 - [ ] Smoke manual Windows em hardware real para salvar/resetar/analisar
   com tela grande e arrasto/zoom.
 - [ ] Smoke manual Android (toque, pinça, persistência, desempenho).
@@ -161,3 +162,23 @@ via callback `com.android.library`; não altera o pub-cache.
 Critério de aceite: job `Android debug APK build` inteiramente verde,
 seguida de smoke em Android físico. A correção não prova, por si só, que
 persistência Isar, seleção 3D ou gesto pinça funcionem no dispositivo.
+
+## 7. Verificação independente Imp / Isc por MPPT
+
+Datasheet oficial Solplanet ASW6000-S (setembro/2024):
+https://solplanet.net/wp-content/uploads/2021/11/Datasheet-ASW-6-10K-S-Series-Global-EN_0924_web.pdf
+
+- Limite **operacional/absorvível**: Imp = 16 A. Acima disso,
+  `MPPT_CURRENT_LIMIT` é um **aviso** de possível clipping DC,
+  não uma declaração de incompatibilidade ou segurança.
+- Limite de **curto-circuito**: Isc = 22,5 A.
+  Acima dele, `MPPT_SHORT_CIRCUIT` continua **bloqueio**.
+- No caso Imp STC 17,57 A / Isc STC 18,60 A, as duas verificações
+  devem divergir: Imp gera aviso, Isc STC não gera bloqueio.
+  A auditoria exibe os dois limites junto de cada MPPT.
+- **Segurança:** Isc em STC não substitui o cálculo sob condições
+  extremas (ganho bifacial, irradiância elevada, temperatura, norma
+  aplicável e dimensionamento dos condutores/conectores). Confirmar
+  manualmente o sobredimensionamento com o fabricante antes de
+  instalação física. A aplicação do HSP óptico não homologa o
+  circuito nem calcula perdas DC por clipping.

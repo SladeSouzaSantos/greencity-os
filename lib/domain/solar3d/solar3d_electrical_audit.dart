@@ -56,6 +56,8 @@ class Solar3dMpptElectricalCheck {
   final double totalPowerWp;
   final double parallelImpStcA;
   final double parallelIscStcA;
+  final double operatingCurrentLimitA;
+  final double shortCircuitCurrentLimitA;
 
   const Solar3dMpptElectricalCheck({
     required this.inverterId,
@@ -64,6 +66,8 @@ class Solar3dMpptElectricalCheck {
     required this.totalPowerWp,
     required this.parallelImpStcA,
     required this.parallelIscStcA,
+    required this.operatingCurrentLimitA,
+    required this.shortCircuitCurrentLimitA,
   });
 }
 
@@ -308,18 +312,26 @@ class Solar3dElectricalAudit {
               'Limites Impp/Isc por MPPT ausentes; confira datasheet.');
         }
         if (dcCurrent > 0 && parallelImp > dcCurrent + 1e-6) {
-          issue('MPPT_CURRENT', scope,
-              Solar3dElectricalSeverity.blocking,
-              'Corrente Impp combinada das strings '
-              '${parallelImp.toStringAsFixed(2)} A excede '
-              '${dcCurrent.toStringAsFixed(2)} A.');
+          // Operating input current is a usable MPPT current rating.
+          // It is NOT the absolute short-circuit current limit.
+          issue('MPPT_CURRENT_LIMIT', scope,
+              Solar3dElectricalSeverity.warning,
+              'Imp STC combinada das strings '
+              '${parallelImp.toStringAsFixed(2)} A excede a '
+              'corrente operacional máxima do MPPT '
+              '${dcCurrent.toStringAsFixed(2)} A. '
+              'Pode ocorrer limitação de corrente/potência. '
+              'Confirme compatibilidade com o fabricante; '
+              'o cálculo óptico não modela clipping.');
         }
         if (shortCircuit > 0 && parallelIsc > shortCircuit + 1e-6) {
           issue('MPPT_SHORT_CIRCUIT', scope,
               Solar3dElectricalSeverity.blocking,
-              'Soma Isc das strings '
-              '${parallelIsc.toStringAsFixed(2)} A excede '
-              '${shortCircuit.toStringAsFixed(2)} A.');
+              'Isc STC somada das strings '
+              '${parallelIsc.toStringAsFixed(2)} A excede a '
+              'corrente máxima de curto-circuito do MPPT '
+              '${shortCircuit.toStringAsFixed(2)} A. '
+              'Não aplicar este circuito ao projeto elétrico.');
         }
         final minVmp = strings.map((s) => s.vmpStcV).reduce(math.min);
         final maxVmp = strings.map((s) => s.vmpStcV).reduce(math.max);
@@ -335,6 +347,8 @@ class Solar3dElectricalAudit {
           strings: List.unmodifiable(strings), totalPowerWp: mpptPower,
           parallelImpStcA: parallelImp,
           parallelIscStcA: parallelIsc,
+          operatingCurrentLimitA: dcCurrent,
+          shortCircuitCurrentLimitA: shortCircuit,
         ));
       }
       if (inverter.maxInputPowerKw > 0 &&
