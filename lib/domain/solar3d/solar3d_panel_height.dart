@@ -51,11 +51,16 @@ class Solar3dPanelHeight {
       throw const FormatException(
         'Altura vertical da borda inferior deve ficar entre 0 e 500 m');
     }
-    return lowerEdgeMeters + verticalHalfExtent(
+    final center = lowerEdgeMeters + verticalHalfExtent(
       depthMeters: depthMeters,
       tiltDegrees: tiltDegrees,
       thicknessMeters: thicknessMeters,
     );
+    if (center > 500) {
+      throw const FormatException(
+        'Altura do centro resultante excede o limite de 500 m');
+    }
+    return center;
   }
 
   static double lowerEdgeOf(Solar3dObject panel) {

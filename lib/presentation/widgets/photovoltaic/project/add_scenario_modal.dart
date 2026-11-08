@@ -87,6 +87,16 @@ class _AddScenarioModalState extends State<AddScenarioModal> {
   /// HSP base remains free of legacy obstacles. Each new set of
   /// modules is one SolarArray; modules become individually editable in 3D.
   void _confirmAndAdd() {
+    try {
+      _addValidatedScenario();
+    } on FormatException catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    }
+  }
+
+  void _addValidatedScenario() {
     final count = int.parse(quantityController.text.trim());
     // Public/UI measurement is the lower edge. HSP contract stays centred.
     final centerElevation = Solar3dPanelHeight.centerFromLowerEdge(
