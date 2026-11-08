@@ -63,6 +63,11 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   String progress = '';
   Map<int, List<PanelMonthlyIrradianceLoss>> monthly = {};
   int sceneRevision = 0;
+  // Cache expensive per-panel ray intersections across camera-only
+  // interactions (orbit, pinch, zoom, pan). Invalidate on scene/solar
+  // time/selection changes, not each finger movement.
+  (int, String?, DateTime, int, int)? _previewShadeKey;
+  Map<String, Solar3dPanelShadeInspection?> _previewShadeCache = {};
   Solar3dElectricalAudit? electricalAudit;
   String? lastCalculatedHourlyEndpoint;
   static const String hourlyUrl = String.fromEnvironment(
@@ -491,9 +496,18 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   /// - no direct incidence on the front face (null, not 0% loss).
   Map<String, Solar3dPanelShadeInspection?> _previewShadows(
       Solar3dSunPosition sun) {
+    final key = (
+      sceneRevision, selectedId, previewDay,
+      previewMinutes, projectUtcOffset,
+    );
+    if (_previewShadeKey == key) return _previewShadeCache;
     final scene = analysisScene;
     final result = <String, Solar3dPanelShadeInspection?>{};
-    if (!sun.aboveHorizon) return result;
+    if (!sun.aboveHorizon) {
+      _previewShadeKey = key;
+      _previewShadeCache = result;
+      return result;
+    }
     final panels = scene.objects.where(
       (o) => o.kind == Solar3dObjectKind.panel,
     ).toList();
@@ -515,6 +529,8 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
         columns: first?.id == panel.id ? 8 : 6,
       );
     }
+    _previewShadeKey = key;
+    _previewShadeCache = result;
     return result;
   }
 
