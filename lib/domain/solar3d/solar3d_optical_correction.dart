@@ -10,17 +10,34 @@ import 'solar3d_plan_factory.dart';
 /// masking. Ratios are weighted by the installed module's nameplate power and
 /// reference POA, then applied ONCE per MPPT to the existing HSP-based
 /// production estimate. This is not a calibrated string I-V/MPPT model.
+/// Provisional MPPT grouping of PHYSICAL MODULES in the 3D study.
+/// This does not certify string wiring, minimum start-up voltages or bypass.
+class Solar3dMpptOpticalGroup {
+  final double powerWp;
+  final List<double> baselineMonthlyHsp;
+  final List<double> retentionMonthly;
+
+  const Solar3dMpptOpticalGroup({
+    required this.powerWp,
+    required this.baselineMonthlyHsp,
+    required this.retentionMonthly,
+  });
+}
+
 class Solar3dOpticalCorrection {
   final int weatherYearUtc;
   final String designSignature;
   final int panelCount;
   final Map<String, Map<int, List<double>>> retentionBySystemMppt;
+  /// MPPT keys are scoped UNDER the inverter/system ID, never global.
+  final Map<String, Map<int, Solar3dMpptOpticalGroup>> groupsBySystemMppt;
 
   const Solar3dOpticalCorrection._({
     required this.weatherYearUtc,
     required this.designSignature,
     required this.panelCount,
     required this.retentionBySystemMppt,
+    required this.groupsBySystemMppt,
   });
 
   /// Invalidate the estimate when a module, inverter, MPPT or reference HSP
@@ -78,8 +95,10 @@ class Solar3dOpticalCorrection {
     }
     scene.validate();
     final base = Solar3dPlanFactory.fromSystems(systems);
-    final expected = <String, ({Solar3dObject panel, String systemId,
-        int mpptIndex, double powerWp})>{};
+    final expected = <String, ({
+      Solar3dObject panel, String systemId, int maxMpptIndex,
+      double powerWp, List<double> monthlyBaseHsp,
+    })>{};
     for (final sys in systems) {
       for (var arrIndex = 0; arrIndex < sys.arrays.length; arrIndex++) {
         final array = sys.arrays[arrIndex];
@@ -108,8 +127,9 @@ class Solar3dOpticalCorrection {
           final panel = base.objects.firstWhere((o) => o.id == id);
           expected[id] = (
             panel: panel, systemId: sys.id,
-            mpptIndex: array.mpptIndex,
+            maxMpptIndex: sys.inverter.mpptCount,
             powerWp: array.solarScenario.module.powerWp.toDouble(),
+            monthlyBaseHsp: result.monthlyHspReal,
           );
         }
       }
@@ -131,15 +151,21 @@ class Solar3dOpticalCorrection {
       final basePanel = entry.value.panel;
       final azimuthDelta =
           (panel.azimuthDegrees - basePanel.azimuthDegrees).abs() % 360;
-      if (panel.mpptIndex != entry.value.mpptIndex ||
-          panel.moduleModel != basePanel.moduleModel ||
+      // A panel can be reassigned to ANY EXISTING tracker of its
+      // OWN inverter. Different inverters may both have 'MPPT 1':
+      // systemId keeps these distinct. Never mutate SolarArray wiring.
+      if (panel.mpptIndex == null || panel.mpptIndex! < 1 ||
+          panel.mpptIndex! > entry.value.maxMpptIndex) {
+        throw FormatException('MPPT inexistente no inversor da placa ${entry.key}');
+      }
+      if (panel.moduleModel != basePanel.moduleModel ||
           (panel.width - basePanel.width).abs() > 1e-8 ||
           (panel.depth - basePanel.depth).abs() > 1e-8 ||
           (panel.tiltDegrees - basePanel.tiltDegrees).abs() > 1e-6 ||
           math.min(azimuthDelta, 360 - azimuthDelta) > 1e-6) {
         throw FormatException(
-          'Placa ${entry.key}: módulo, MPPT ou orientação diferentes '
-          'do projeto elétrico. Atualize o cadastro e recalcule o HSP.');
+          'Placa ${entry.key}: módulo ou orientação diferentes '
+          'do HSP de referência. Refaça o HSP com esses parâmetros.');
       }
       final tilt = panel.tiltDegrees * math.pi / 180;
       final lowest = panel.center.y -
@@ -157,13 +183,16 @@ class Solar3dOpticalCorrection {
     }
     final sums = <String, Map<int, List<double>>>{};
     final denominators = <String, Map<int, List<double>>>{};
+    final powers = <String, Map<int, double>>{};
+    final baseHsp = <String, Map<int, List<double>>>{};
     for (var month = 1; month <= 12; month++) {
       final rows = monthly[month]!;
       final seen = <String>{};
       for (final row in rows) {
         final data = expected[row.panelId];
-        if (data == null || !seen.add(row.panelId) ||
-            row.monthUtc != month || row.mpptIndex != data.mpptIndex ||
+        final panel = present[row.panelId];
+        if (data == null || panel == null || !seen.add(row.panelId) ||
+            row.monthUtc != month || row.mpptIndex != panel.mpptIndex ||
             !row.referenceHsp.isFinite || !row.correctedHsp.isFinite ||
             row.referenceHsp <= 0 ||
             row.correctedHsp < -1e-8 ||
@@ -172,7 +201,19 @@ class Solar3dOpticalCorrection {
             'Resultado óptico mensal inválido, duplicado ou incompatível');
         }
         final sys = data.systemId;
-        final mppt = data.mpptIndex;
+        final mppt = panel.mpptIndex!;
+        if (month == 1) {
+          powers.putIfAbsent(sys, () => {})[mppt] =
+              (powers[sys]?[mppt] ?? 0) + data.powerWp;
+          baseHsp.putIfAbsent(sys, () => {})
+              .putIfAbsent(mppt, () => List<double>.filled(12, double.infinity));
+        }
+        final baseline = data.monthlyBaseHsp[month - 1];
+        if (!baseline.isFinite || baseline < 0) {
+          throw const FormatException('HSP de referência por array inválido');
+        }
+        final currentMin = baseHsp[sys]![mppt]![month - 1];
+        if (baseline < currentMin) baseHsp[sys]![mppt]![month - 1] = baseline;
         final numerators = sums.putIfAbsent(sys, () => {})
             .putIfAbsent(mppt, () => List<double>.filled(12, 0));
         final totalReferences = denominators.putIfAbsent(sys, () => {})
@@ -186,6 +227,7 @@ class Solar3dOpticalCorrection {
       }
     }
     final ratios = <String, Map<int, List<double>>>{};
+    final projectedGroups = <String, Map<int, Solar3dMpptOpticalGroup>>{};
     for (final group in sums.entries) {
       final mpptRatios = <int, List<double>>{};
       for (final entry in group.value.entries) {
@@ -199,12 +241,22 @@ class Solar3dOpticalCorrection {
         mpptRatios[entry.key] = List.unmodifiable(values);
       }
       ratios[group.key] = Map.unmodifiable(mpptRatios);
+      projectedGroups[group.key] = Map.unmodifiable({
+        for (final entry in mpptRatios.entries)
+          entry.key: Solar3dMpptOpticalGroup(
+            powerWp: powers[group.key]![entry.key]!,
+            baselineMonthlyHsp: List.unmodifiable(
+              baseHsp[group.key]![entry.key]!),
+            retentionMonthly: entry.value,
+          ),
+      });
     }
     return Solar3dOpticalCorrection._(
       weatherYearUtc: yearUtc,
       designSignature: signatureFor(systems),
       panelCount: expected.length,
       retentionBySystemMppt: Map.unmodifiable(ratios),
+      groupsBySystemMppt: Map.unmodifiable(projectedGroups),
     );
   }
 }
