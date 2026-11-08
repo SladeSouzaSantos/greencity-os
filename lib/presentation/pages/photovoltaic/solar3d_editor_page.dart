@@ -451,7 +451,9 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
   Future<void> _editObstacleNumerically() async {
     final current = selected;
     if (current == null ||
-        current.kind == Solar3dObjectKind.panel) return;
+        current.kind == Solar3dObjectKind.panel) {
+      return;
+    }
     final edited = await showDialog<Solar3dObject>(
       context: context,
       builder: (_) => Solar3dObstacleNumericDialog(obstacle: current),
