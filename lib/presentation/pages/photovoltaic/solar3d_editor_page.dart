@@ -1311,7 +1311,12 @@ class _Solar3dEditorPageState extends State<Solar3dEditorPage> {
     final dx = world.x - anchor.x, dz = world.z - anchor.z;
     if (!dx.isFinite || !dz.isFinite) return;
     if (multiSelectMode && dragStartScene != null) {
-      if (dx.abs() < .0001 && dz.abs() < .0001) return;
+      // Returning the finger to its initial point also returns the
+      // whole group to its initial coordinates.
+      if (dx.abs() < .0001 && dz.abs() < .0001 &&
+          identical(document!.scene, dragStartScene)) {
+        return;
+      }
       final doc = document!;
       try {
         // The delta always comes from the original snapshot, preventing
