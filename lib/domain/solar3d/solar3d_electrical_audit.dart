@@ -216,29 +216,43 @@ class Solar3dElectricalAudit {
                       (minimumAmbientC - 25)))
               : null;
           final scope = '${system.id} / MPPT $mppt / $stringId';
-          if (vmp < inverter.minMpptVoltage) {
+          if (inverter.minMpptVoltage <= 0 ||
+              inverter.maxMpptVoltage <= 0 ||
+              inverter.startVoltage <= 0 ||
+              inverter.maxInputVoltage <= 0) {
+            issue('INVERTER_DC_LIMITS_MISSING', scope,
+                Solar3dElectricalSeverity.warning,
+                'Faixas de tensão do inversor ausentes ou não validadas '
+                'no cadastro; não é possível confirmar a viabilidade.');
+          }
+          if (inverter.minMpptVoltage > 0 &&
+              vmp < inverter.minMpptVoltage) {
             issue('MPPT_UNDERVOLTAGE', scope,
                 Solar3dElectricalSeverity.blocking,
                 'Vmp STC ${vmp.toStringAsFixed(1)} V menor que o mínimo '
                 'MPPT ${inverter.minMpptVoltage} V.');
-          } else if (vmp > inverter.maxMpptVoltage) {
+          } else if (inverter.maxMpptVoltage > 0 &&
+              vmp > inverter.maxMpptVoltage) {
             issue('MPPT_OVERVOLTAGE', scope,
                 Solar3dElectricalSeverity.blocking,
                 'Vmp STC ${vmp.toStringAsFixed(1)} V excede o máximo '
                 'MPPT ${inverter.maxMpptVoltage} V.');
           }
-          if (voc < inverter.startVoltage) {
+          if (inverter.startVoltage > 0 &&
+              voc < inverter.startVoltage) {
             issue('START_UNDERVOLTAGE', scope,
                 Solar3dElectricalSeverity.blocking,
                 'Voc STC ${voc.toStringAsFixed(1)} V insuficiente para '
                 'partida (${inverter.startVoltage} V).');
           }
-          if (voc > inverter.maxInputVoltage) {
+          if (inverter.maxInputVoltage > 0 &&
+              voc > inverter.maxInputVoltage) {
             issue('VOC_MAX_STC', scope,
                 Solar3dElectricalSeverity.blocking,
                 'Voc STC excede a tensão máxima CC do inversor.');
           }
-          if (cold != null && cold > inverter.maxInputVoltage) {
+          if (cold != null && inverter.maxInputVoltage > 0 &&
+              cold > inverter.maxInputVoltage) {
             issue('VOC_MAX_COLD', scope,
                 Solar3dElectricalSeverity.blocking,
                 'Voc estimado no frio ${cold.toStringAsFixed(1)} V excede '
@@ -246,10 +260,17 @@ class Solar3dElectricalAudit {
           }
           final moduleVoltageLimit = modules.map(
               (m) => m.maxSystemVoltage).reduce(math.min);
-          if ((cold ?? voc) > moduleVoltageLimit) {
+          if (moduleVoltageLimit > 0 &&
+              (cold ?? voc) > moduleVoltageLimit) {
             issue('MODULE_SYSTEM_VOLTAGE', scope,
                 Solar3dElectricalSeverity.blocking,
                 'Tensão de string excede limite do módulo.');
+          }
+          if (modules.any((m) => m.tempCoefVoc == 0)) {
+            issue('VOC_TEMPERATURE_COEFFICIENT_MISSING', scope,
+                Solar3dElectricalSeverity.warning,
+                'Coeficiente de temperatura de Voc igual a zero; '
+                'confirme no datasheet antes de confiar no Voc frio.');
           }
           // STC screen cannot prove Vmp under high-cell temperature,
           // nor the bypass-current limit of shaded series cells.
@@ -281,6 +302,11 @@ class Solar3dElectricalAudit {
             ? config.shortCircuitCurrentsA![mppt - 1]
             : inverter.maxShortCircuitCurrent;
         final scope = '${system.id} / MPPT $mppt';
+        if (dcCurrent <= 0 || shortCircuit <= 0) {
+          issue('MPPT_DC_CURRENT_LIMITS_MISSING', scope,
+              Solar3dElectricalSeverity.warning,
+              'Limites Impp/Isc por MPPT ausentes; confira datasheet.');
+        }
         if (dcCurrent > 0 && parallelImp > dcCurrent + 1e-6) {
           issue('MPPT_CURRENT', scope,
               Solar3dElectricalSeverity.blocking,
