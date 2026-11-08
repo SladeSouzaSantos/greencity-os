@@ -191,10 +191,19 @@ class SolarSystemCard extends StatelessWidget {
             ), 
             const SizedBox(height: 4),          
             Text(
-              "Perda Sombra HSP legado: ${perdaSombreamento.toStringAsFixed(1)}%",
-              style: const TextStyle(fontSize: 11,
-                  fontWeight: FontWeight.bold, color: Colors.redAccent),
+              "Perda no HSP base (sem obstáculos 3D): "
+              "${perdaSombreamento.toStringAsFixed(1)}%",
+              style: TextStyle(fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: perdaSombreamento > 0
+                      ? Colors.redAccent : Colors.grey.shade700),
             ),
+            if (opticalCorrection != null)
+              const Text(
+                'Sombreamento 3D incluído separadamente na geração '
+                'corrigida; veja o resumo por MPPT abaixo.',
+                style: TextStyle(fontSize: 11),
+              ),
             if (mismatchLoss > 1) 
             Padding(
               padding: const EdgeInsets.only(top: 4),
